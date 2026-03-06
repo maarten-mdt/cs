@@ -42,5 +42,18 @@ export async function initDb(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_customer ON conversations(customer_email);
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS widget_config (
+      id INT PRIMARY KEY DEFAULT 1,
+      greeting TEXT DEFAULT 'Hi! How can I help you today?',
+      suggested_questions JSONB DEFAULT '["Where is my order?","Product compatibility","Return policy"]',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await p.query(`
+    INSERT INTO widget_config (id, greeting, suggested_questions) 
+    VALUES (1, 'Hi! How can I help you today?', '["Where is my order?","Product compatibility","Return policy"]')
+    ON CONFLICT (id) DO NOTHING
+  `);
   console.log("Database initialized");
 }

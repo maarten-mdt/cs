@@ -23,21 +23,32 @@ declare global {
   }
 }
 
-if (typeof window !== "undefined") {
-  window.MDTChatWidget = { init };
+async function autoInit() {
   const scripts = document.getElementsByTagName("script");
   for (let i = 0; i < scripts.length; i++) {
     const s = scripts[i];
-    const apiUrl = s.getAttribute("data-api-url");
-    if (apiUrl) {
-      init({
-        apiUrl: apiUrl.replace(/\/$/, ""),
-        greeting: s.getAttribute("data-greeting") || undefined,
-        suggestedQuestions: s.getAttribute("data-suggested-questions")
-          ? s.getAttribute("data-suggested-questions")!.split("|")
-          : undefined,
-      });
+    const src = s.getAttribute("src") || "";
+    if (src.includes("mdt-chat-widget")) {
+      const apiUrl = (s.getAttribute("data-api-url") || window.location.origin).replace(/\/$/, "");
+      let greeting = s.getAttribute("data-greeting") || undefined;
+      let suggestedQuestions = s.getAttribute("data-suggested-questions")
+        ? s.getAttribute("data-suggested-questions")!.split("|")
+        : undefined;
+      if (!greeting || !suggestedQuestions) {
+        try {
+          const res = await fetch(`${apiUrl}/api/widget/config`);
+          const cfg = await res.json();
+          greeting = greeting || cfg.greeting;
+          suggestedQuestions = suggestedQuestions || cfg.suggestedQuestions;
+        } catch (_) {}
+      }
+      init({ apiUrl, greeting, suggestedQuestions });
       break;
     }
   }
+}
+
+if (typeof window !== "undefined") {
+  window.MDTChatWidget = { init };
+  autoInit();
 }
