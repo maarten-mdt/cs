@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MDT Chat Widget Demo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="font-family: Poppins, sans-serif; padding: 40px;">
+  <h1>MDT Chat Widget Demo</h1>
+  <p>Open the chat button in the bottom-right corner to test the widget.</p>
+  <p>Make sure the backend is running (npm run dev) and DATABASE_URL + ANTHROPIC_API_KEY are set.</p>
+
+  <!-- Widget: use data-api-url to point to your backend -->
+  <script
+    src="/widget/mdt-chat-widget.iife.js"
+    data-api-url=""
+  ></script>
+</body>
+</html>
