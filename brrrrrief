@@ -1,0 +1,52 @@
+1. Chat on public home, not admin
+Chat should be on the root home page (/), not the admin.
+/ = public page with an inline chat in the middle (no popup).
+Admin stays separate (e.g. no chat there, or only for testing).
+2. Customers page and customer model
+Customers page in admin: list everyone who has ever interacted with the bot.
+Unique identifier: email.
+Later: When Zendesk/other APIs are connected, sync and store customer data on this server (keyed by email).
+Merge: If two people have the same name and address but different emails, support merging them into one canonical customer (one email, all conversations reassigned).
+3. Website source: sync was “too fast”, 0 chunks
+When website sync finishes with 0 chunks, treat it as a failure and show a clear error (don’t show success).
+URL: If user enters a URL without https://, normalize it (e.g. add https://).
+First page failure: If the first page fails to fetch, show that exact error (e.g. HTTP 403, timeout), not a generic message.
+Timeout: Add a fetch timeout so the server doesn’t hang.
+Admin: Show the full sync error message in the Data sources list when status is “Failed”.
+4. Website behind Cloudflare (403)
+Crawler was getting HTTP 403 from the site (e.g. mdttac.com).
+Use browser-like request headers (User-Agent, Accept, etc.) so the site is less likely to block the crawler.
+Support custom User-Agent via env (e.g. CRAWLER_USER_AGENT) so the same string can be allowed in Cloudflare WAF; crawler must send that User-Agent when set.
+5. Home page chat: “nothing happens” on Send / Enter
+On the public home page, clicking Send or pressing Enter did nothing.
+CSP: Avoid relying on inline scripts; use an external script (e.g. chat.js) so strict CSP doesn’t block it.
+Form / Enter: Use a form and handle submit so Enter reliably sends the message (and doesn’t reload the page).
+Streaming: SSE stream from the API can arrive in chunks; buffer and parse by event (e.g. split on \n\n) so partial lines don’t break parsing and responses show up.
+Backend: Serve the chat script (e.g. GET /chat.js).
+6. Remove chat from admin home
+Remove the chat box from the admin “home” (Conversations page).
+Admin should list/manage conversations (and later customers, sources, etc.) without an inline chat there.
+7. Crawl the whole website, not just 50/200 pages
+Website source was limited to 50 then 200 pages; the site has hundreds of pages and should support thousands of chunks.
+Increase limits: Much higher default and max for “max pages” (e.g. 500 default, up to 10,000 then 50,000).
+Admin: Let user set “Max pages to crawl” when adding a website source, and edit this on the source detail page, then Sync again without re-adding the source.
+Long pages: Split long page content into smaller chunks (e.g. ~2000 chars with overlap) so retrieval can use the right parts.
+Retrieval: Retrieve more chunks per query (e.g. 14 instead of 8) so answers use more of the knowledge base.
+8. Zendesk: how to know it’s working
+Connections: Zendesk credentials (subdomain, email, API token) are in Admin → Connections.
+Data source: User must add a “Zendesk Help Center” source in Data sources and Sync; then “View chunks” shows articles.
+Sync status (success/failed) and error should be visible in the Data sources list.
+9. Zendesk source: what to enter
+When adding a Zendesk Help Center source, there is only one field: Name.
+It’s a label for the source (e.g. “Zendesk Help”, “Help Center”).
+Credentials and locale/defaults come from Connections and config, not from this form.
+10. Zendesk sync failed / “fetch failed”
+Sync can fail with “fetch failed” (network-level, e.g. wrong subdomain, DNS, or Railway outbound restrictions).
+Subdomain must be only the part before .zendesk.com (e.g. mdt), not the full domain.
+User should see the exact error in the Data sources list for debugging.
+11. No limits on sources – get all data
+Zendesk: No 200-article cap; sync all Help Center articles (e.g. default/max 10,000).
+Website: Support up to tens of thousands of pages (e.g. max 50,000) so large sites can be fully crawled.
+Google Drive: Paginate folder listing (don’t stop at first 200 files per folder); support deeper folder trees (e.g. depth 15).
+Shopify: Already paginate through all products; keep “no limit” behavior.
+Goal: all possible information from each source type gets into the database.
