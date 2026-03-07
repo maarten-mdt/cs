@@ -54,6 +54,10 @@ app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "../../home.html"));
 });
 
+app.get("/chat.js", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../../chat.js"));
+});
+
 async function start() {
   await initDb();
   startDailySync();
