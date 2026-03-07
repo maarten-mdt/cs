@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { InlineChat } from "../components/InlineChat";
 
 interface Conversation {
   id: string;
@@ -28,10 +27,6 @@ export function Conversations({ apiUrl }: Props) {
 
   return (
     <div className="space-y-8">
-      <section className="flex justify-center">
-        <InlineChat apiUrl={apiUrl} />
-      </section>
-
       <section>
         <h1 className="text-2xl font-semibold text-gray-900 mb-4">Recent conversations</h1>
         {loading ? (
