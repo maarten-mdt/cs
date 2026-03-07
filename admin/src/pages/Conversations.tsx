@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { InlineChat } from "../components/InlineChat";
 
 interface Conversation {
   id: string;
@@ -25,25 +26,19 @@ export function Conversations({ apiUrl }: Props) {
       .finally(() => setLoading(false));
   }, [apiUrl]);
 
-  if (loading) {
-    return (
-      <div className="text-center py-12 text-gray-500">
-        Loading conversations...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-lg">
-        {error}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold text-gray-900">Conversations</h1>
+    <div className="space-y-8">
+      <section className="flex justify-center">
+        <InlineChat apiUrl={apiUrl} />
+      </section>
+
+      <section>
+        <h1 className="text-2xl font-semibold text-gray-900 mb-4">Recent conversations</h1>
+        {loading ? (
+          <div className="text-center py-8 text-gray-500">Loading...</div>
+        ) : error ? (
+          <div className="bg-red-50 text-red-700 p-4 rounded-lg">{error}</div>
+        ) : (
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -95,6 +90,8 @@ export function Conversations({ apiUrl }: Props) {
           </tbody>
         </table>
       </div>
+        )}
+      </section>
     </div>
   );
 }

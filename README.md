@@ -59,15 +59,16 @@ Or push to GitHub – Railway auto-deploys if connected.
 
 ## Data sources (knowledge base)
 
-In **Admin → Data sources** you can add multiple sources; the chatbot uses this content to answer questions (RAG).
+In **Admin → Data sources** you can add multiple sources; the chatbot uses this content to answer questions (RAG). **All sources are re-synced daily at 2:00 AM UTC.**
 
 | Type | Description |
 |------|-------------|
-| **Website** | Crawls a site (e.g. mdttac.com). Config: `{"baseUrl": "https://...", "maxPages": 50}` |
-| **Zendesk** | Syncs Help Center articles. Requires Zendesk env vars. Config: `{"locale": "en-us", "maxArticles": 200}` |
-| **Shopify products** | Imports product catalog. Requires Shopify env vars. No config. |
+| **Website** | Enter URL; choose "Entire site" or "Only this page". Crawls product pages, docs, etc. |
+| **Google Drive** | Enter folder URL or ID. Requires `GOOGLE_SERVICE_ACCOUNT_JSON`; share the folder with the service account email. Syncs Docs (as text), text files, CSV, Markdown. |
+| **Zendesk** | Syncs Help Center articles. Requires Zendesk env vars. |
+| **Shopify products** | Imports product catalog. Requires Shopify env vars. |
 
-After adding a source, click **Sync** to pull content. With `OPENAI_API_KEY` set, chunks are embedded for semantic search; otherwise full-text search is used.
+After adding a source, click **Sync** to pull content (or wait for daily sync). With `OPENAI_API_KEY` set, chunks are embedded for semantic search; otherwise full-text search is used.
 
 ## API
 

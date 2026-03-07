@@ -3,8 +3,9 @@ import { hasEmbeddings, embedMany } from "../embeddings.js";
 import { crawlWebsite } from "./website.js";
 import { fetchHelpCenterArticles } from "./zendesk.js";
 import { fetchShopifyProductsAsChunks } from "./shopify-products.js";
+import { fetchGoogleDriveFolder } from "./google-drive.js";
 
-export type SourceType = "website" | "zendesk" | "shopify_products" | "manual";
+export type SourceType = "website" | "zendesk" | "shopify_products" | "google_drive" | "manual";
 
 export async function runSync(
   sourceId: string,
@@ -17,9 +18,10 @@ export async function runSync(
   try {
     if (type === "website") {
       const baseUrl = (config.baseUrl as string) || "";
-      const maxPages = (config.maxPages as number) || 50;
-      if (!baseUrl) throw new Error("baseUrl required");
-      chunks = await crawlWebsite({ baseUrl, maxPages });
+      const singlePage = Boolean(config.singlePage);
+      const maxPages = singlePage ? 1 : ((config.maxPages as number) || 50);
+      if (!baseUrl) throw new Error("URL required");
+      chunks = await crawlWebsite({ baseUrl, maxPages, singlePage });
     } else if (type === "zendesk") {
       chunks = await fetchHelpCenterArticles({
         locale: config.locale as string | undefined,
@@ -27,6 +29,10 @@ export async function runSync(
       });
     } else if (type === "shopify_products") {
       chunks = await fetchShopifyProductsAsChunks();
+    } else if (type === "google_drive") {
+      const folderId = (config.folderId as string) || (config.folderUrl as string);
+      if (!folderId) throw new Error("Folder ID or URL required");
+      chunks = await fetchGoogleDriveFolder(folderId);
     } else {
       throw new Error(`Unknown source type: ${type}`);
     }
@@ -43,7 +49,7 @@ export async function runSync(
     sourceId,
   ]);
 
-  const useEmbeddings = hasEmbeddings();
+  const useEmbeddings = await hasEmbeddings();
   const texts = chunks.map((c) => (c.title ? `${c.title}\n\n${c.content}` : c.content));
   let embeddings: number[][] = [];
   if (useEmbeddings && texts.length > 0) {

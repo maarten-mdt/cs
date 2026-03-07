@@ -1,15 +1,15 @@
+import { getConnectionConfig } from "./connections.js";
+
 export interface ZendeskConfig {
   subdomain: string;
   email: string;
   apiToken: string;
 }
 
-function getConfig(): ZendeskConfig | null {
-  const subdomain = process.env.ZENDESK_SUBDOMAIN;
-  const email = process.env.ZENDESK_EMAIL;
-  const apiToken = process.env.ZENDESK_API_TOKEN;
-  if (!subdomain || !email || !apiToken) return null;
-  return { subdomain, email, apiToken };
+async function getConfig(): Promise<ZendeskConfig | null> {
+  const c = await getConnectionConfig("zendesk");
+  if (!c?.subdomain || !c?.email || !c?.apiToken) return null;
+  return { subdomain: c.subdomain, email: c.email, apiToken: c.apiToken };
 }
 
 export async function createTicket(params: {
@@ -18,7 +18,7 @@ export async function createTicket(params: {
   requesterEmail: string;
   requesterName?: string;
 }): Promise<{ id?: number; error?: string }> {
-  const config = getConfig();
+  const config = await getConfig();
   if (!config) {
     return { error: "Zendesk not configured" };
   }

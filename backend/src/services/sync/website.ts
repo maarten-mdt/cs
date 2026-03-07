@@ -4,6 +4,8 @@ export interface WebsiteSourceConfig {
   baseUrl: string;
   maxPages?: number;
   includePaths?: string[];
+  /** If true, only crawl the single URL (no following links) */
+  singlePage?: boolean;
 }
 
 export async function extractTextFromHtml(html: string, url: string): Promise<{ title: string; text: string }> {
@@ -24,7 +26,8 @@ export async function fetchPage(url: string): Promise<string> {
 
 export async function crawlWebsite(config: WebsiteSourceConfig): Promise<{ url: string; title: string; content: string }[]> {
   const baseUrl = config.baseUrl.replace(/\/$/, "");
-  const maxPages = config.maxPages ?? 50;
+  const singlePage = config.singlePage ?? false;
+  const maxPages = singlePage ? 1 : (config.maxPages ?? 50);
   const seen = new Set<string>();
   const toVisit: string[] = [baseUrl];
   const results: { url: string; title: string; content: string }[] = [];
@@ -42,6 +45,7 @@ export async function crawlWebsite(config: WebsiteSourceConfig): Promise<{ url: 
         results.push({ url, title, content: text });
       }
       if (results.length >= maxPages) break;
+      if (singlePage) break;
 
       const sameOrigin = (href: string) => {
         try {

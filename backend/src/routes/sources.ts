@@ -26,9 +26,9 @@ sourcesRouter.post("/", async (req: Request, res: Response) => {
       res.status(400).json({ error: "name and type required" });
       return;
     }
-    const validTypes: SourceType[] = ["website", "zendesk", "shopify_products", "manual"];
+    const validTypes: SourceType[] = ["website", "zendesk", "shopify_products", "google_drive", "manual"];
     if (!validTypes.includes(type)) {
-      res.status(400).json({ error: "Invalid type. Use: website, zendesk, shopify_products, manual" });
+      res.status(400).json({ error: "Invalid type. Use: website, zendesk, shopify_products, google_drive, manual" });
       return;
     }
     const pool = getPool();

@@ -47,6 +47,7 @@ export async function initDb(): Promise<void> {
       id INT PRIMARY KEY DEFAULT 1,
       greeting TEXT DEFAULT 'Hi! How can I help you today?',
       suggested_questions JSONB DEFAULT '["Where is my order?","Product compatibility","Return policy"]',
+      behavior_instructions TEXT,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -55,6 +56,9 @@ export async function initDb(): Promise<void> {
     VALUES (1, 'Hi! How can I help you today?', '["Where is my order?","Product compatibility","Return policy"]')
     ON CONFLICT (id) DO NOTHING
   `);
+  await p.query(`
+    ALTER TABLE widget_config ADD COLUMN IF NOT EXISTS behavior_instructions TEXT
+  `).catch(() => {});
 
   let hasVector = false;
   try {
@@ -99,6 +103,14 @@ export async function initDb(): Promise<void> {
       await p.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_embedding ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`);
     } catch (_) {}
   }
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS connections (
+      name VARCHAR(50) PRIMARY KEY,
+      config JSONB DEFAULT '{}',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 
   console.log("Database initialized");
 }

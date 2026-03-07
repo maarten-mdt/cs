@@ -4,6 +4,8 @@ import { ConversationDetail } from "./pages/ConversationDetail";
 import { Settings } from "./pages/Settings";
 import { DataSources } from "./pages/DataSources";
 import { SourceDetail } from "./pages/SourceDetail";
+import { Connections } from "./pages/Connections";
+import { Instructions } from "./pages/Instructions";
 
 interface AppProps {
   apiUrl: string;
@@ -21,8 +23,14 @@ export default function App({ apiUrl }: AppProps) {
               MDT Chat Admin
             </Link>
             <div className="flex gap-4">
+              <Link to="/connections" className="text-sm text-gray-400 hover:text-white">
+                Connections
+              </Link>
               <Link to="/sources" className="text-sm text-gray-400 hover:text-white">
                 Data sources
+              </Link>
+              <Link to="/instructions" className="text-sm text-gray-400 hover:text-white">
+                Instructions
               </Link>
               <Link to="/settings" className="text-sm text-gray-400 hover:text-white">
                 Settings
@@ -37,8 +45,10 @@ export default function App({ apiUrl }: AppProps) {
         <Routes>
           <Route path="/" element={<Conversations apiUrl={baseUrl} />} />
           <Route path="/conversations/:id" element={<ConversationDetail apiUrl={baseUrl} />} />
+          <Route path="/connections" element={<Connections apiUrl={baseUrl} />} />
           <Route path="/sources" element={<DataSources apiUrl={baseUrl} />} />
           <Route path="/sources/:id" element={<SourceDetail apiUrl={baseUrl} />} />
+          <Route path="/instructions" element={<Instructions apiUrl={baseUrl} />} />
           <Route path="/settings" element={<Settings apiUrl={baseUrl} />} />
         </Routes>
       </main>

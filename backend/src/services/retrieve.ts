@@ -16,7 +16,7 @@ export async function retrieve(query: string): Promise<RetrievedChunk[]> {
   const queryTrim = query.trim();
   if (!queryTrim) return [];
 
-  if (hasEmbeddings()) {
+  if (await hasEmbeddings()) {
     try {
       const queryEmbedding = await embed(queryTrim);
       const vectorStr = `[${queryEmbedding.join(",")}]`;

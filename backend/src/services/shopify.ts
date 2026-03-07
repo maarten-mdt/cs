@@ -1,17 +1,18 @@
+import { getConnectionConfig } from "./connections.js";
+
 export interface ShopifyConfig {
   shop: string;
   accessToken: string;
 }
 
-function getConfig(): ShopifyConfig | null {
-  const shop = process.env.SHOPIFY_SHOP;
-  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-  if (!shop || !accessToken) return null;
-  return { shop: shop.replace(/\.myshopify\.com$/, ""), accessToken };
+async function getConfig(): Promise<ShopifyConfig | null> {
+  const c = await getConnectionConfig("shopify");
+  if (!c?.shop || !c?.accessToken) return null;
+  return { shop: String(c.shop).replace(/\.myshopify\.com$/, ""), accessToken: c.accessToken };
 }
 
 export async function getOrder(orderId: string): Promise<object | null> {
-  const config = getConfig();
+  const config = await getConfig();
   if (!config) return null;
 
   const url = `https://${config.shop}.myshopify.com/admin/api/2024-01/orders/${orderId}.json`;
@@ -27,7 +28,7 @@ export async function getOrder(orderId: string): Promise<object | null> {
 }
 
 export async function getOrdersByEmail(email: string): Promise<object[]> {
-  const config = getConfig();
+  const config = await getConfig();
   if (!config) return [];
 
   const url = `https://${config.shop}.myshopify.com/admin/api/2024-01/orders.json?status=any&email=${encodeURIComponent(email)}&limit=10`;
@@ -43,7 +44,7 @@ export async function getOrdersByEmail(email: string): Promise<object[]> {
 }
 
 export async function searchProducts(query: string): Promise<object[]> {
-  const config = getConfig();
+  const config = await getConfig();
   if (!config) return [];
 
   const url = `https://${config.shop}.myshopify.com/admin/api/2024-01/products.json?limit=10`;

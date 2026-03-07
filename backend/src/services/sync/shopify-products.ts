@@ -1,11 +1,14 @@
+import { getConnectionConfig } from "../connections.js";
+
 export async function fetchShopifyProductsAsChunks(): Promise<
   { url: string; title: string; content: string }[]
 > {
-  const shop = process.env.SHOPIFY_SHOP;
-  const token = process.env.SHOPIFY_ACCESS_TOKEN;
-  if (!shop || !token) throw new Error("Shopify not configured");
+  const c = await getConnectionConfig("shopify");
+  const shop = c?.shop || process.env.SHOPIFY_SHOP;
+  const token = c?.accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+  if (!shop || !token) throw new Error("Shopify not configured. Set in Connections.");
 
-  const base = `https://${shop.replace(/\.myshopify\.com$/, "")}.myshopify.com`;
+  const base = `https://${String(shop).replace(/\.myshopify\.com$/, "")}.myshopify.com`;
   const results: { url: string; title: string; content: string }[] = [];
   let pageInfo: string | null = null;
 

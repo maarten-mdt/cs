@@ -3,12 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
 import { getPool } from "../db/client.js";
 import { retrieve } from "../services/retrieve.js";
+import { getConnectionConfig } from "../services/connections.js";
 
 export const chatRouter = Router();
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 const SYSTEM_PROMPT_BASE = `You are a helpful customer support assistant for MDT (Modular Driven Technologies), a company that sells tactical and outdoor equipment.
 
@@ -63,7 +60,24 @@ chatRouter.post("/stream", async (req: Request, res: Response) => {
             )
             .join("\n---\n")}`
         : "";
-    const systemPrompt = SYSTEM_PROMPT_BASE + contextSection;
+
+    const instructionsRow = await pool.query(
+      `SELECT behavior_instructions FROM widget_config WHERE id = 1 LIMIT 1`
+    );
+    const behaviorInstructions = instructionsRow.rows[0]?.behavior_instructions?.trim() || "";
+    const instructionsSection = behaviorInstructions
+      ? `\n\n## Behavior instructions (follow these):\n${behaviorInstructions}`
+      : "";
+
+    const systemPrompt = SYSTEM_PROMPT_BASE + instructionsSection + contextSection;
+
+    const anthropicConfig = await getConnectionConfig("anthropic");
+    const apiKey = anthropicConfig?.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({ error: "Anthropic API key not configured. Add in Admin → Connections." });
+      return;
+    }
+    const anthropic = new Anthropic({ apiKey });
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");

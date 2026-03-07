@@ -1,11 +1,13 @@
 import OpenAI from "openai";
+import { getConnectionConfig } from "./connections.js";
 
 let _openai: OpenAI | null = null;
 
-function getOpenAI(): OpenAI {
+async function getOpenAI(): Promise<OpenAI> {
   if (!_openai) {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) throw new Error("OPENAI_API_KEY not set");
+    const c = await getConnectionConfig("openai");
+    const key = c?.apiKey || process.env.OPENAI_API_KEY;
+    if (!key) throw new Error("OpenAI API key not set");
     _openai = new OpenAI({ apiKey: key });
   }
   return _openai;
@@ -13,15 +15,17 @@ function getOpenAI(): OpenAI {
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 
-export function hasEmbeddings(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
+export async function hasEmbeddings(): Promise<boolean> {
+  const c = await getConnectionConfig("openai");
+  return Boolean(c?.apiKey || process.env.OPENAI_API_KEY);
 }
 
 export async function embed(text: string): Promise<number[]> {
-  if (!process.env.OPENAI_API_KEY) {
+  const c = await getConnectionConfig("openai");
+  if (!c?.apiKey && !process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY not set");
   }
-  const res = await getOpenAI().embeddings.create({
+  const res = await (await getOpenAI()).embeddings.create({
     model: EMBEDDING_MODEL,
     input: text.slice(0, 8000),
   });
@@ -29,11 +33,12 @@ export async function embed(text: string): Promise<number[]> {
 }
 
 export async function embedMany(texts: string[]): Promise<number[][]> {
-  if (!process.env.OPENAI_API_KEY || texts.length === 0) {
+  const c = await getConnectionConfig("openai");
+  if ((!c?.apiKey && !process.env.OPENAI_API_KEY) || texts.length === 0) {
     return texts.map(() => []);
   }
   const batch = texts.map((t) => t.slice(0, 8000));
-  const res = await getOpenAI().embeddings.create({
+  const res = await (await getOpenAI()).embeddings.create({
     model: EMBEDDING_MODEL,
     input: batch,
   });

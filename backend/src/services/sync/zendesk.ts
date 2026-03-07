@@ -1,9 +1,4 @@
-const authHeader = (): string => {
-  const email = process.env.ZENDESK_EMAIL;
-  const token = process.env.ZENDESK_API_TOKEN;
-  if (!email || !token) throw new Error("Zendesk not configured");
-  return `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
-};
+import { getConnectionConfig } from "../connections.js";
 
 export interface ZendeskSourceConfig {
   locale?: string;
@@ -13,8 +8,12 @@ export interface ZendeskSourceConfig {
 export async function fetchHelpCenterArticles(
   config: ZendeskSourceConfig
 ): Promise<{ url: string; title: string; content: string }[]> {
-  const subdomain = process.env.ZENDESK_SUBDOMAIN;
-  if (!subdomain) throw new Error("ZENDESK_SUBDOMAIN not set");
+  const c = await getConnectionConfig("zendesk");
+  const subdomain = c?.subdomain || process.env.ZENDESK_SUBDOMAIN;
+  const email = c?.email || process.env.ZENDESK_EMAIL;
+  const token = c?.apiToken || process.env.ZENDESK_API_TOKEN;
+  if (!subdomain || !email || !token) throw new Error("Zendesk not configured. Set in Connections.");
+  const authHeader = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
 
   const locale = config.locale ?? "en-us";
   const maxArticles = config.maxArticles ?? 200;
@@ -27,7 +26,7 @@ export async function fetchHelpCenterArticles(
       `https://${subdomain}.zendesk.com/api/v2/help_center/${locale}/articles.json?page=${page}&per_page=${perPage}`,
       {
         headers: {
-          Authorization: authHeader(),
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
       }

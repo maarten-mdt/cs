@@ -10,7 +10,9 @@ import { shopifyRouter } from "./routes/shopify.js";
 import { zendeskRouter } from "./routes/zendesk.js";
 import { widgetConfigRouter } from "./routes/widget-config.js";
 import { sourcesRouter } from "./routes/sources.js";
+import { connectionsRouter } from "./routes/connections.js";
 import { initDb } from "./db/client.js";
+import { startDailySync } from "./scheduler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +29,7 @@ app.use("/api/shopify", shopifyRouter);
 app.use("/api/zendesk", zendeskRouter);
 app.use("/api/widget/config", widgetConfigRouter);
 app.use("/api/sources", sourcesRouter);
+app.use("/api/connections", connectionsRouter);
 
 // Serve widget script
 const widgetPath = path.join(__dirname, "../../widget/dist");
@@ -51,6 +54,7 @@ app.get("/", (_req, res) => {
 
 async function start() {
   await initDb();
+  startDailySync();
   app.listen(PORT, () => {
     console.log(`MDT AI Chatbot API running on port ${PORT}`);
   });
