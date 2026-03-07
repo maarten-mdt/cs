@@ -46,7 +46,7 @@ export function DataSources({ apiUrl }: Props) {
       return {
         baseUrl: websiteUrl.trim().replace(/\/$/, "") || undefined,
         singlePage: !websiteWholeSite,
-        maxPages: websiteWholeSite ? Math.min(10000, Math.max(1, websiteMaxPages)) : 1,
+        maxPages: websiteWholeSite ? Math.min(50000, Math.max(1, websiteMaxPages)) : 1,
       };
     }
     if (showAdd === "google_drive") {
@@ -195,7 +195,7 @@ export function DataSources({ apiUrl }: Props) {
               <input
                 type="number"
                 min={1}
-                max={10000}
+                max={50000}
                 value={websiteMaxPages}
                 onChange={(e) => setWebsiteMaxPages(Number(e.target.value) || 200)}
                 className="w-32 px-3 py-2 border border-gray-300 rounded-lg"

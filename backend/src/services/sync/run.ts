@@ -45,7 +45,7 @@ export async function runSync(
     if (type === "website") {
       const baseUrl = (config.baseUrl as string) || "";
       const singlePage = Boolean(config.singlePage);
-      const maxPages = singlePage ? 1 : Math.min(10000, Math.max(1, (config.maxPages as number) || 500));
+      const maxPages = singlePage ? 1 : Math.min(50000, Math.max(1, (config.maxPages as number) || 500));
       if (!baseUrl) throw new Error("URL required");
       chunks = await crawlWebsite({ baseUrl, maxPages, singlePage });
       chunks = splitLongChunks(chunks, CHUNK_MAX_CHARS, CHUNK_OVERLAP);
@@ -57,7 +57,7 @@ export async function runSync(
     } else if (type === "zendesk") {
       chunks = await fetchHelpCenterArticles({
         locale: config.locale as string | undefined,
-        maxArticles: (config.maxArticles as number) || 200,
+        maxArticles: (config.maxArticles as number) || 10000,
       });
     } else if (type === "shopify_products") {
       chunks = await fetchShopifyProductsAsChunks();

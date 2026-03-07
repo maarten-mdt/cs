@@ -29,13 +29,16 @@ export async function fetchGoogleDriveFolder(
   const results: { url: string; title: string; content: string }[] = [];
 
   async function processFolder(parentId: string, depth: number): Promise<void> {
-    if (depth > 5) return;
-    const res = await drive.files.list({
-      q: `'${parentId}' in parents and trashed = false`,
-      fields: "files(id, name, mimeType)",
-      pageSize: 200,
-    });
-    const files = res.data.files || [];
+    if (depth > 15) return;
+    let pageToken: string | undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${parentId}' in parents and trashed = false`,
+        fields: "nextPageToken, files(id, name, mimeType)",
+        pageSize: 500,
+        pageToken: pageToken,
+      });
+      const files = res.data.files || [];
 
     for (const f of files) {
       if (!f.id || !f.name) continue;
@@ -86,6 +89,8 @@ export async function fetchGoogleDriveFolder(
         });
       }
     }
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
   }
 
   await processFolder(folderId, 0);

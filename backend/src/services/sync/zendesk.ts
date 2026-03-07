@@ -16,7 +16,7 @@ export async function fetchHelpCenterArticles(
   const authHeader = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
 
   const locale = config.locale ?? "en-us";
-  const maxArticles = config.maxArticles ?? 200;
+  const maxArticles = config.maxArticles ?? 10000;
   const results: { url: string; title: string; content: string }[] = [];
   let page = 1;
   const perPage = 100;
