@@ -7,6 +7,32 @@ import { fetchGoogleDriveFolder } from "./google-drive.js";
 
 export type SourceType = "website" | "zendesk" | "shopify_products" | "google_drive" | "manual";
 
+const CHUNK_MAX_CHARS = 2000;
+const CHUNK_OVERLAP = 200;
+
+function splitLongChunks(
+  chunks: { url: string; title: string; content: string }[],
+  maxChars: number,
+  overlap: number
+): { url: string; title: string; content: string }[] {
+  const out: { url: string; title: string; content: string }[] = [];
+  for (const c of chunks) {
+    if (c.content.length <= maxChars) {
+      out.push(c);
+      continue;
+    }
+    let start = 0;
+    while (start < c.content.length) {
+      const end = Math.min(start + maxChars, c.content.length);
+      const segment = c.content.slice(start, end);
+      out.push({ url: c.url, title: c.title, content: segment });
+      if (end >= c.content.length) break;
+      start = end - overlap;
+    }
+  }
+  return out;
+}
+
 export async function runSync(
   sourceId: string,
   type: SourceType,
@@ -19,9 +45,10 @@ export async function runSync(
     if (type === "website") {
       const baseUrl = (config.baseUrl as string) || "";
       const singlePage = Boolean(config.singlePage);
-      const maxPages = singlePage ? 1 : ((config.maxPages as number) || 50);
+      const maxPages = singlePage ? 1 : ((config.maxPages as number) || 200);
       if (!baseUrl) throw new Error("URL required");
       chunks = await crawlWebsite({ baseUrl, maxPages, singlePage });
+      chunks = splitLongChunks(chunks, CHUNK_MAX_CHARS, CHUNK_OVERLAP);
       if (chunks.length === 0) {
         throw new Error(
           "No pages could be crawled. Check that the URL is correct (include https://), the site is reachable from this server, and the page has enough text content."

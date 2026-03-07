@@ -2,7 +2,7 @@ import { getPool } from "../db/client.js";
 import { embed } from "./embeddings.js";
 import { hasEmbeddings } from "./embeddings.js";
 
-const MAX_CHUNKS = 8;
+const MAX_CHUNKS = 14;
 const MIN_FTS_RANK = 0.01;
 
 export interface RetrievedChunk {

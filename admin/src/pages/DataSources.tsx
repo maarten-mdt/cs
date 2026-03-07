@@ -25,6 +25,7 @@ export function DataSources({ apiUrl }: Props) {
   const [newName, setNewName] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [websiteWholeSite, setWebsiteWholeSite] = useState(true);
+  const [websiteMaxPages, setWebsiteMaxPages] = useState(200);
   const [driveFolderUrl, setDriveFolderUrl] = useState("");
   const [syncing, setSyncing] = useState<string | null>(null);
 
@@ -45,7 +46,7 @@ export function DataSources({ apiUrl }: Props) {
       return {
         baseUrl: websiteUrl.trim().replace(/\/$/, "") || undefined,
         singlePage: !websiteWholeSite,
-        maxPages: websiteWholeSite ? 50 : 1,
+        maxPages: websiteWholeSite ? Math.min(1000, Math.max(1, websiteMaxPages)) : 1,
       };
     }
     if (showAdd === "google_drive") {
@@ -75,6 +76,7 @@ export function DataSources({ apiUrl }: Props) {
         setNewName("");
         setWebsiteUrl("");
         setWebsiteWholeSite(true);
+        setWebsiteMaxPages(200);
         setDriveFolderUrl("");
         fetchSources();
       })
@@ -187,6 +189,20 @@ export function DataSources({ apiUrl }: Props) {
               </label>
             </div>
           </div>
+          {websiteWholeSite && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max pages to crawl</label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={websiteMaxPages}
+                onChange={(e) => setWebsiteMaxPages(Number(e.target.value) || 200)}
+                className="w-32 px-3 py-2 border border-gray-300 rounded-lg"
+              />
+              <p className="text-xs text-gray-500 mt-1">Default 200. Increase (e.g. 500) for larger sites.</p>
+            </div>
+          )}
           <button
             onClick={handleAdd}
             disabled={!canAdd()}
