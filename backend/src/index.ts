@@ -9,6 +9,7 @@ import { healthRouter } from "./routes/health.js";
 import { shopifyRouter } from "./routes/shopify.js";
 import { zendeskRouter } from "./routes/zendesk.js";
 import { widgetConfigRouter } from "./routes/widget-config.js";
+import { sourcesRouter } from "./routes/sources.js";
 import { initDb } from "./db/client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,7 @@ app.use("/api/health", healthRouter);
 app.use("/api/shopify", shopifyRouter);
 app.use("/api/zendesk", zendeskRouter);
 app.use("/api/widget/config", widgetConfigRouter);
+app.use("/api/sources", sourcesRouter);
 
 // Serve widget script
 const widgetPath = path.join(__dirname, "../../widget/dist");

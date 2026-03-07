@@ -2,6 +2,8 @@ import { Routes, Route, Link } from "react-router-dom";
 import { Conversations } from "./pages/Conversations";
 import { ConversationDetail } from "./pages/ConversationDetail";
 import { Settings } from "./pages/Settings";
+import { DataSources } from "./pages/DataSources";
+import { SourceDetail } from "./pages/SourceDetail";
 
 interface AppProps {
   apiUrl: string;
@@ -18,9 +20,14 @@ export default function App({ apiUrl }: AppProps) {
             <Link to="/" className="text-xl font-semibold">
               MDT Chat Admin
             </Link>
-            <Link to="/settings" className="text-sm text-gray-400 hover:text-white">
-              Settings
-            </Link>
+            <div className="flex gap-4">
+              <Link to="/sources" className="text-sm text-gray-400 hover:text-white">
+                Data sources
+              </Link>
+              <Link to="/settings" className="text-sm text-gray-400 hover:text-white">
+                Settings
+              </Link>
+            </div>
           </div>
           <span className="text-sm text-gray-400">Conversations & Live Monitor</span>
         </div>
@@ -30,6 +37,8 @@ export default function App({ apiUrl }: AppProps) {
         <Routes>
           <Route path="/" element={<Conversations apiUrl={baseUrl} />} />
           <Route path="/conversations/:id" element={<ConversationDetail apiUrl={baseUrl} />} />
+          <Route path="/sources" element={<DataSources apiUrl={baseUrl} />} />
+          <Route path="/sources/:id" element={<SourceDetail apiUrl={baseUrl} />} />
           <Route path="/settings" element={<Settings apiUrl={baseUrl} />} />
         </Routes>
       </main>

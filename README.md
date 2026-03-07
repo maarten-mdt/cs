@@ -57,11 +57,27 @@ Optional: `data-greeting="Custom greeting"` and `data-suggested-questions="Quest
 
 Or push to GitHub – Railway auto-deploys if connected.
 
+## Data sources (knowledge base)
+
+In **Admin → Data sources** you can add multiple sources; the chatbot uses this content to answer questions (RAG).
+
+| Type | Description |
+|------|-------------|
+| **Website** | Crawls a site (e.g. mdttac.com). Config: `{"baseUrl": "https://...", "maxPages": 50}` |
+| **Zendesk** | Syncs Help Center articles. Requires Zendesk env vars. Config: `{"locale": "en-us", "maxArticles": 200}` |
+| **Shopify products** | Imports product catalog. Requires Shopify env vars. No config. |
+
+After adding a source, click **Sync** to pull content. With `OPENAI_API_KEY` set, chunks are embedded for semantic search; otherwise full-text search is used.
+
 ## API
 
-- `POST /api/chat/stream` – Chat with streaming
+- `POST /api/chat/stream` – Chat with streaming (uses knowledge base when available)
 - `GET /api/chat/conversations` – List conversations (admin)
 - `GET /api/chat/conversations/:id/messages` – Get messages (admin)
+- `GET/PUT /api/widget/config` – Widget greeting and suggested questions
+- `GET/POST/PATCH/DELETE /api/sources` – Data sources CRUD
+- `POST /api/sources/:id/sync` – Run sync for a source
+- `GET /api/sources/:id/chunks` – List chunks for a source
 - `POST /api/zendesk/escalate` – Create Zendesk ticket
 - `GET /api/shopify/orders/:id` – Get order by ID
 - `GET /api/shopify/orders?email=...` – Get orders by email

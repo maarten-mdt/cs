@@ -55,5 +55,50 @@ export async function initDb(): Promise<void> {
     VALUES (1, 'Hi! How can I help you today?', '["Where is my order?","Product compatibility","Return policy"]')
     ON CONFLICT (id) DO NOTHING
   `);
+
+  let hasVector = false;
+  try {
+    await p.query(`CREATE EXTENSION IF NOT EXISTS vector`);
+    hasVector = true;
+  } catch (_) {
+    console.warn("pgvector extension not available; using full-text search only.");
+  }
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS data_sources (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(255) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      config JSONB DEFAULT '{}',
+      last_synced_at TIMESTAMPTZ,
+      last_sync_status VARCHAR(50),
+      last_sync_error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_chunks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      source_id UUID REFERENCES data_sources(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      title VARCHAR(500),
+      url VARCHAR(2000),
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_knowledge_source ON knowledge_chunks(source_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_content_fts ON knowledge_chunks USING gin(to_tsvector('english', content));
+  `);
+  if (hasVector) {
+    try {
+      await p.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding vector(1536)`);
+      await p.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_embedding ON knowledge_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`);
+    } catch (_) {}
+  }
+
   console.log("Database initialized");
 }

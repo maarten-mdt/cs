@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
 import { getPool } from "../db/client.js";
+import { retrieve } from "../services/retrieve.js";
 
 export const chatRouter = Router();
 
@@ -9,14 +10,14 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const SYSTEM_PROMPT = `You are a helpful customer support assistant for MDT (Modular Driven Technologies), a company that sells tactical and outdoor equipment.
+const SYSTEM_PROMPT_BASE = `You are a helpful customer support assistant for MDT (Modular Driven Technologies), a company that sells tactical and outdoor equipment.
 
 You help customers with:
 - Order status, tracking, and ship dates
 - Product information, compatibility, and specifications
 - General policies and FAQs
 
-Be concise, friendly, and professional. If you need information you don't have (like order details), tell the customer you'll need to look that up. Never make up order numbers, tracking info, or product specs.`;
+Be concise, friendly, and professional. Use the knowledge below when relevant. If you need information you don't have (like live order details), say so. Never make up order numbers, tracking info, or product specs.`;
 
 chatRouter.post("/stream", async (req: Request, res: Response) => {
   try {
@@ -52,6 +53,18 @@ chatRouter.post("/stream", async (req: Request, res: Response) => {
       content: r.content,
     }));
 
+    const chunks = await retrieve(message);
+    const contextSection =
+      chunks.length > 0
+        ? `\n\n## Knowledge base (use when relevant):\n${chunks
+            .map(
+              (c) =>
+                `---\n${c.title ? `Title: ${c.title}\n` : ""}${c.url ? `URL: ${c.url}\n` : ""}${c.content.slice(0, 1500)}`
+            )
+            .join("\n---\n")}`
+        : "";
+    const systemPrompt = SYSTEM_PROMPT_BASE + contextSection;
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -60,7 +73,7 @@ chatRouter.post("/stream", async (req: Request, res: Response) => {
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
