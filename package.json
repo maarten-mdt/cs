@@ -1,13 +1,12 @@
 {
-  "name": "mdt-ai-chatbot",
+  "name": "mdt-support-platform",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["backend", "widget", "admin"],
+  "workspaces": ["backend", "frontend"],
   "scripts": {
-    "build": "npm run build --workspace=backend && npm run build --workspace=widget && npm run build --workspace=admin",
+    "build": "npm run build --workspace=frontend && npm run build --workspace=backend",
     "start": "npm run start --workspace=backend",
-    "dev": "npm run dev --workspace=backend",
-    "db:migrate": "npm run db:migrate --workspace=backend"
+    "dev": "npm run dev --workspace=backend"
   },
   "engines": {
     "node": ">=20"

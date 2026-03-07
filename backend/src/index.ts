@@ -29,6 +29,13 @@ app.use("/", routes);
 const publicPath = path.join(__dirname, "../../public");
 app.use(express.static(publicPath));
 
+// Admin dashboard (frontend build)
+const adminPath = path.join(__dirname, "../../frontend/dist");
+app.use("/admin", express.static(adminPath));
+app.get("/admin/*", (_req, res) => {
+  res.sendFile(path.join(adminPath, "index.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`MDT Support API running on port ${PORT}`);
 });
