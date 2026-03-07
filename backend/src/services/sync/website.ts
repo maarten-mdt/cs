@@ -18,12 +18,32 @@ export async function extractTextFromHtml(html: string, url: string): Promise<{ 
 
 const FETCH_TIMEOUT_MS = 25_000;
 
+const DEFAULT_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+function getFetchHeaders(): Record<string, string> {
+  const userAgent = process.env.CRAWLER_USER_AGENT?.trim() || DEFAULT_USER_AGENT;
+  return {
+    "User-Agent": userAgent,
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
+  };
+}
+
 export async function fetchPage(url: string): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "MDT-SupportBot/1.0 (compatible; +https://github.com/mdt-support)" },
+      headers: getFetchHeaders(),
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
