@@ -5,6 +5,7 @@ import { Settings } from "./pages/Settings";
 import { DataSources } from "./pages/DataSources";
 import { SourceDetail } from "./pages/SourceDetail";
 import { Connections } from "./pages/Connections";
+import { Customers } from "./pages/Customers";
 import { Instructions } from "./pages/Instructions";
 
 interface AppProps {
@@ -26,6 +27,9 @@ export default function App({ apiUrl }: AppProps) {
               <Link to="/connections" className="text-sm text-gray-400 hover:text-white">
                 Connections
               </Link>
+              <Link to="/customers" className="text-sm text-gray-400 hover:text-white">
+                Customers
+              </Link>
               <Link to="/sources" className="text-sm text-gray-400 hover:text-white">
                 Data sources
               </Link>
@@ -46,6 +50,7 @@ export default function App({ apiUrl }: AppProps) {
           <Route path="/" element={<Conversations apiUrl={baseUrl} />} />
           <Route path="/conversations/:id" element={<ConversationDetail apiUrl={baseUrl} />} />
           <Route path="/connections" element={<Connections apiUrl={baseUrl} />} />
+          <Route path="/customers" element={<Customers apiUrl={baseUrl} />} />
           <Route path="/sources" element={<DataSources apiUrl={baseUrl} />} />
           <Route path="/sources/:id" element={<SourceDetail apiUrl={baseUrl} />} />
           <Route path="/instructions" element={<Instructions apiUrl={baseUrl} />} />

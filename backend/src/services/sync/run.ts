@@ -22,6 +22,11 @@ export async function runSync(
       const maxPages = singlePage ? 1 : ((config.maxPages as number) || 50);
       if (!baseUrl) throw new Error("URL required");
       chunks = await crawlWebsite({ baseUrl, maxPages, singlePage });
+      if (chunks.length === 0) {
+        throw new Error(
+          "No pages could be crawled. Check that the URL is correct (include https://), the site is reachable from this server, and the page has enough text content."
+        );
+      }
     } else if (type === "zendesk") {
       chunks = await fetchHelpCenterArticles({
         locale: config.locale as string | undefined,

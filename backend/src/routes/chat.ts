@@ -34,6 +34,21 @@ chatRouter.post("/stream", async (req: Request, res: Response) => {
         [uuidv4(), customerEmail || null]
       );
       convId = result.rows[0].id;
+    } else if (customerEmail) {
+      await pool.query(
+        `UPDATE conversations SET customer_email = $1, updated_at = NOW() WHERE id = $2`,
+        [customerEmail, convId]
+      );
+    }
+
+    if (customerEmail && typeof customerEmail === "string" && customerEmail.trim()) {
+      const email = customerEmail.trim().toLowerCase();
+      await pool.query(
+        `INSERT INTO customers (email, last_seen_at, updated_at)
+         VALUES ($1, NOW(), NOW())
+         ON CONFLICT (email) DO UPDATE SET last_seen_at = NOW(), updated_at = NOW()`,
+        [email]
+      );
     }
 
     await pool.query(

@@ -11,6 +11,7 @@ import { zendeskRouter } from "./routes/zendesk.js";
 import { widgetConfigRouter } from "./routes/widget-config.js";
 import { sourcesRouter } from "./routes/sources.js";
 import { connectionsRouter } from "./routes/connections.js";
+import { customersRouter } from "./routes/customers.js";
 import { initDb } from "./db/client.js";
 import { startDailySync } from "./scheduler.js";
 
@@ -30,6 +31,7 @@ app.use("/api/zendesk", zendeskRouter);
 app.use("/api/widget/config", widgetConfigRouter);
 app.use("/api/sources", sourcesRouter);
 app.use("/api/connections", connectionsRouter);
+app.use("/api/customers", customersRouter);
 
 // Serve widget script
 const widgetPath = path.join(__dirname, "../../widget/dist");
@@ -47,9 +49,9 @@ app.get("/demo", (_req, res) => {
   res.sendFile(path.join(__dirname, "../../demo.html"));
 });
 
-// Root redirect to admin
+// Home page: inline chat (root)
 app.get("/", (_req, res) => {
-  res.redirect("/admin");
+  res.sendFile(path.join(__dirname, "../../home.html"));
 });
 
 async function start() {

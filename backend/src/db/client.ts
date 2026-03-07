@@ -112,5 +112,23 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email VARCHAR(255) NOT NULL UNIQUE,
+      name VARCHAR(255),
+      address TEXT,
+      merged_into_email VARCHAR(255),
+      last_seen_at TIMESTAMPTZ,
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+    CREATE INDEX IF NOT EXISTS idx_customers_merged ON customers(merged_into_email);
+  `);
+
   console.log("Database initialized");
 }

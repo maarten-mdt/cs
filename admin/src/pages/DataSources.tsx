@@ -303,9 +303,12 @@ export function DataSources({ apiUrl }: Props) {
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {s.last_synced_at ? new Date(s.last_synced_at).toLocaleString() : "—"}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 max-w-xs">
                     {s.last_sync_error ? (
-                      <span className="text-red-600 text-sm" title={s.last_sync_error}>Failed</span>
+                      <div className="text-red-600 text-sm">
+                        <span className="font-medium">Failed</span>
+                        <p className="mt-0.5 text-xs text-red-700 break-words">{s.last_sync_error}</p>
+                      </div>
                     ) : s.last_sync_status ? (
                       <span className="text-green-600 text-sm">{s.last_sync_status}</span>
                     ) : (
