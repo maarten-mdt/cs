@@ -45,7 +45,7 @@ export async function runSync(
     if (type === "website") {
       const baseUrl = (config.baseUrl as string) || "";
       const singlePage = Boolean(config.singlePage);
-      const maxPages = singlePage ? 1 : ((config.maxPages as number) || 200);
+      const maxPages = singlePage ? 1 : Math.min(10000, Math.max(1, (config.maxPages as number) || 500));
       if (!baseUrl) throw new Error("URL required");
       chunks = await crawlWebsite({ baseUrl, maxPages, singlePage });
       chunks = splitLongChunks(chunks, CHUNK_MAX_CHARS, CHUNK_OVERLAP);

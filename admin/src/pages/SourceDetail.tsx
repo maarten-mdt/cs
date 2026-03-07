@@ -27,7 +27,7 @@ export function SourceDetail({ apiUrl }: Props) {
   const [source, setSource] = useState<Source | null>(null);
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [loading, setLoading] = useState(true);
-  const [websiteMaxPages, setWebsiteMaxPages] = useState(200);
+  const [websiteMaxPages, setWebsiteMaxPages] = useState(500);
   const [savingConfig, setSavingConfig] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -72,7 +72,7 @@ export function SourceDetail({ apiUrl }: Props) {
   const saveWebsiteConfig = () => {
     if (!id || !source) return;
     setSavingConfig(true);
-    const config = { ...source.config, maxPages: Math.min(1000, Math.max(1, websiteMaxPages)) };
+    const config = { ...source.config, maxPages: Math.min(10000, Math.max(1, websiteMaxPages)) };
     fetch(`${apiUrl}/api/sources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -120,7 +120,7 @@ export function SourceDetail({ apiUrl }: Props) {
             <input
               type="number"
               min={1}
-              max={1000}
+              max={10000}
               value={websiteMaxPages}
               onChange={(e) => setWebsiteMaxPages(Number(e.target.value) || 200)}
               className="w-32 px-3 py-2 border border-gray-300 rounded-lg"
@@ -142,7 +142,7 @@ export function SourceDetail({ apiUrl }: Props) {
           >
             {syncing ? "Syncing…" : "Sync again"}
           </button>
-          <p className="text-xs text-gray-500 w-full">Save then Sync again to crawl more pages (e.g. 300–500).</p>
+          <p className="text-xs text-gray-500 w-full">Save then Sync again. Use 500–2000+ for large sites (sync may take several minutes).</p>
         </div>
       )}
       <p className="text-gray-600">
