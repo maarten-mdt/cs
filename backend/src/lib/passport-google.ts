@@ -31,6 +31,7 @@ export async function registerGoogleStrategy(): Promise<void> {
         callbackURL:
           process.env.AUTH_CALLBACK_URL ||
           (process.env.PUBLIC_URL || "http://localhost:3000") + "/auth/google/callback",
+        scope: ["profile", "email"],
       },
       async (_accessToken, _refreshToken, profile, done) => {
         const email = profile.emails?.[0]?.value;
