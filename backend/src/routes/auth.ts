@@ -13,18 +13,38 @@ export interface SessionUser {
   role: string;
 }
 
-authRouter.get("/auth/google", (req, res, next) => {
-  passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+authRouter.get("/auth/google", async (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID?.trim() || !process.env.GOOGLE_CLIENT_SECRET?.trim()) {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.redirect(`${frontendUrl}/admin/login?error=config`);
+  }
+  try {
+    const { registerGoogleStrategy } = await import("../lib/passport-google.js");
+    await registerGoogleStrategy();
+    passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+  } catch (e) {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    res.redirect(`${frontendUrl}/admin/login?error=config`);
+  }
 });
 
-authRouter.get(
-  "/auth/google/callback",
-  passport.authenticate("google", { session: true, failureRedirect: "/auth/failed" }),
-  async (req: Request, res: Response) => {
+authRouter.get("/auth/google/callback", async (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID?.trim() || !process.env.GOOGLE_CLIENT_SECRET?.trim()) {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    res.redirect(`${frontendUrl}/admin/`);
+    return res.redirect(`${frontendUrl}/admin/login?error=config`);
   }
-);
+  try {
+    const { registerGoogleStrategy } = await import("../lib/passport-google.js");
+    await registerGoogleStrategy();
+    passport.authenticate("google", { session: true, failureRedirect: "/auth/failed" })(req, res, next);
+  } catch (e) {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    res.redirect(`${frontendUrl}/admin/login?error=config`);
+  }
+}, async (req: Request, res: Response) => {
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  res.redirect(`${frontendUrl}/admin/`);
+});
 
 authRouter.get("/auth/failed", (_req: Request, res: Response) => {
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";

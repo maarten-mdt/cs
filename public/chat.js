@@ -65,10 +65,17 @@
     })
       .then(function (response) {
         if (!response.ok) {
-          return response.json().then(function (body) {
-            throw new Error(body.error || "Request failed");
-          }).catch(function () {
-            throw new Error("Request failed");
+          return response.text().then(function (text) {
+            var msg = "Request failed";
+            try {
+              var body = JSON.parse(text);
+              if (body && body.error) msg = body.error;
+            } catch (e) {
+              if (text && text.length < 200) msg = text;
+              else if (response.status === 500) msg = "Server error. Check that ANTHROPIC_API_KEY is set in .env.";
+              else msg = "Error " + response.status;
+            }
+            throw new Error(msg);
           });
         }
         return response.body.getReader();

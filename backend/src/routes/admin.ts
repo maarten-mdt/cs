@@ -5,6 +5,6 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth());
 
-adminRouter.get("/api/admin/conversations", (_req, res) => {
+adminRouter.get("/conversations", (_req, res) => {
   res.json([]);
 });

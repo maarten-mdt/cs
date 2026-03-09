@@ -1,21 +1,26 @@
 import "dotenv/config";
+import { config as loadEnv } from "dotenv";
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import session from "express-session";
-import path from "path";
-import { fileURLToPath } from "url";
 import pg from "pg";
 import connectPgSimple from "connect-pg-simple";
 import { routes } from "./routes/index.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { chatRouter } from "./routes/chat.js";
-import "./lib/passport.js";
 import passport from "passport";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// backend/src -> project root is ../../ (CustomerSupportbot)
+loadEnv({ path: path.resolve(__dirname, "../../.env") });
+
+// Passport: minimal only so startup never touches passport-google-oauth20. Admin login uses lazy Google strategy in auth routes.
+await import("./lib/passport-minimal.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,8 +59,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use("/", authRouter);
-app.use("/", adminRouter);
 app.use("/", chatRouter);
+app.use("/api/admin", adminRouter);
 app.use("/", routes);
 
 // Public home page and chat script
