@@ -2,7 +2,8 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { prisma } from "../lib/prisma.js";
 import { enqueueSyncSource } from "../lib/queue.js";
-import { SourceType } from "@prisma/client";
+import { SourceType, ConversationStatus, type Prisma } from "@prisma/client";
+import { getOrdersByEmail } from "../services/orders.js";
 
 export const adminRouter = Router();
 
@@ -14,8 +15,214 @@ function normalizeUrl(url: string | undefined): string | null {
   return u.startsWith("http") ? u : `https://${u}`;
 }
 
-adminRouter.get("/conversations", (_req, res) => {
-  res.json([]);
+// --- Conversations (Chunk 9) ---
+
+adminRouter.get("/conversations", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 50));
+    const status = req.query.status as string | undefined;
+    const topic = req.query.topic as string | undefined;
+    const search = (req.query.search as string)?.trim();
+
+    const where: Prisma.ConversationWhereInput = {};
+    if (status && Object.values(ConversationStatus).includes(status as ConversationStatus)) {
+      where.status = status as ConversationStatus;
+    }
+    if (topic) where.topic = { contains: topic, mode: "insensitive" };
+    if (search) {
+      where.OR = [
+        { customer: { email: { contains: search, mode: "insensitive" } } },
+        { customer: { name: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+
+    const [list, total] = await Promise.all([
+      prisma.conversation.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          customer: { select: { name: true, email: true } },
+          _count: { select: { messages: true } },
+        },
+      }),
+      prisma.conversation.count({ where }),
+    ]);
+
+    const items = list.map((c) => ({
+      id: c.id,
+      customerName: c.customer?.name ?? null,
+      customerEmail: c.customer?.email ?? null,
+      topic: c.topic,
+      status: c.status,
+      messageCount: c._count.messages,
+      sentiment: c.sentiment,
+      createdAt: c.createdAt,
+      resolvedAt: c.resolvedAt,
+    }));
+    res.json({ items, total, page, limit });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to list conversations" });
+  }
+});
+
+adminRouter.get("/conversations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        messages: { orderBy: { createdAt: "asc" } },
+      },
+    });
+    if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+    res.json(conversation);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load conversation" });
+  }
+});
+
+// --- Customers (Chunk 9) ---
+
+adminRouter.get("/customers", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 50));
+    const search = (req.query.search as string)?.trim();
+
+    const where: Prisma.CustomerWhereInput = {
+      conversations: { some: {} },
+    };
+    if (search) {
+      where.OR = [
+        { email: { contains: search, mode: "insensitive" } },
+        { name: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [list, total] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        orderBy: { lastSeenAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { _count: { select: { conversations: true } } },
+      }),
+      prisma.customer.count({ where }),
+    ]);
+
+    const items = list.map((c) => ({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      totalSpend: c.totalSpend,
+      orderCount: c.orderCount,
+      conversationCount: c._count.conversations,
+      firstSeenAt: c.firstSeenAt,
+      lastSeenAt: c.lastSeenAt,
+      shopifyId: c.shopifyId,
+      mergedIntoId: c.mergedIntoId,
+    }));
+    res.json({ items, total, page, limit });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to list customers" });
+  }
+});
+
+adminRouter.get("/customers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: {
+        mergedFrom: { select: { id: true, email: true, name: true } },
+        conversations: {
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: { id: true, topic: true, status: true, createdAt: true },
+        },
+      },
+    });
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+
+    let orders: Awaited<ReturnType<typeof getOrdersByEmail>> | null = null;
+    if (customer.email && process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ACCESS_TOKEN) {
+      try {
+        orders = await getOrdersByEmail(customer.email);
+      } catch {
+        orders = [];
+      }
+    }
+
+    let shopifyCustomerAdminUrl: string | null = null;
+    if (customer.shopifyId && process.env.SHOPIFY_STORE_DOMAIN) {
+      const domain = process.env.SHOPIFY_STORE_DOMAIN.trim().replace(/\.myshopify\.com$/i, "");
+      shopifyCustomerAdminUrl = `https://admin.shopify.com/store/${domain}/customers/${customer.shopifyId}`;
+    }
+
+    res.json({
+      ...customer,
+      orders: orders ?? null,
+      shopifyCustomerAdminUrl,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load customer" });
+  }
+});
+
+adminRouter.post("/customers/:id/merge", async (req, res) => {
+  try {
+    const { id: mergeToId } = req.params;
+    const { mergeFromId } = req.body as { mergeFromId?: string };
+    if (!mergeFromId || typeof mergeFromId !== "string" || !mergeFromId.trim()) {
+      return res.status(400).json({ error: "mergeFromId is required" });
+    }
+    const fromId = mergeFromId.trim();
+    if (fromId === mergeToId) {
+      return res.status(400).json({ error: "Cannot merge customer into themselves" });
+    }
+
+    const [mergeTo, mergeFrom] = await Promise.all([
+      prisma.customer.findUnique({ where: { id: mergeToId } }),
+      prisma.customer.findUnique({ where: { id: fromId } }),
+    ]);
+    if (!mergeTo) return res.status(404).json({ error: "Target customer not found" });
+    if (!mergeFrom) return res.status(404).json({ error: "Source customer not found" });
+    if (mergeFrom.mergedIntoId) return res.status(400).json({ error: "Source customer is already merged" });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.conversation.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: mergeToId },
+      });
+      await tx.customer.update({
+        where: { id: fromId },
+        data: { mergedIntoId: mergeToId },
+      });
+      const toUpdate: { shopifyId?: string; hubspotId?: string; zendeskId?: string } = {};
+      if (mergeFrom.shopifyId && !mergeTo.shopifyId) toUpdate.shopifyId = mergeFrom.shopifyId;
+      if (mergeFrom.hubspotId && !mergeTo.hubspotId) toUpdate.hubspotId = mergeFrom.hubspotId;
+      if (mergeFrom.zendeskId && !mergeTo.zendeskId) toUpdate.zendeskId = mergeFrom.zendeskId;
+      if (Object.keys(toUpdate).length > 0) {
+        await tx.customer.update({ where: { id: mergeToId }, data: toUpdate });
+      }
+    });
+    const updated = await prisma.customer.findUnique({
+      where: { id: mergeToId },
+      include: { _count: { select: { conversations: true } } },
+    });
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to merge customers" });
+  }
 });
 
 // --- Knowledge sources (Chunk 6) ---
