@@ -88,7 +88,7 @@ export function KnowledgePage() {
       };
       if (addType === "WEBSITE" && addUrl.trim()) body.url = addUrl.trim();
       if (addType === "WEBSITE") body.maxPages = Math.min(50000, Math.max(1, addMaxPages));
-      if (addType === "GOOGLE_DRIVE" && addUrl.trim()) body.url = addUrl.trim();
+      if ((addType === "GOOGLE_DRIVE" || addType === "GOOGLE_SHEETS") && addUrl.trim()) body.url = addUrl.trim();
       await api.createSource(body);
       setAddOpen(false);
       setAddName("");
@@ -289,6 +289,12 @@ export function KnowledgePage() {
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Folder URL or ID</label>
                   <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="https://drive.google.com/... or folder ID" />
+                </div>
+              )}
+              {addType === "GOOGLE_SHEETS" && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Spreadsheet URL or ID</label>
+                  <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="https://docs.google.com/spreadsheets/d/... or spreadsheet ID" />
                 </div>
               )}
               {addType === "SHOPIFY" && <p className="text-sm text-gray-400">Uses credentials from the Connections page.</p>}

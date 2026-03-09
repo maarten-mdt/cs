@@ -22,10 +22,43 @@ function getShopifyConfig(): { storeUrl: string; headers: HeadersInit } | null {
   };
 }
 
-/** Find or create Customer by email; update lastSeenAt. */
-export async function identifyCustomer(email: string): Promise<Customer> {
+function getZendeskConfig(): { subdomain: string; auth: string } | null {
+  const sub = process.env.ZENDESK_SUBDOMAIN?.trim();
+  const email = process.env.ZENDESK_EMAIL?.trim();
+  const token = process.env.ZENDESK_API_TOKEN?.trim();
+  if (!sub || !email || !token) return null;
+  const auth = Buffer.from(`${email}/token:${token}`).toString("base64");
+  return { subdomain: sub, auth };
+}
+
+/** Search Zendesk for end-user by email. Returns user id if found. */
+async function findZendeskUserByEmail(email: string): Promise<string | null> {
+  const zd = getZendeskConfig();
+  if (!zd) return null;
+  try {
+    const q = encodeURIComponent(`type:user email:${email.trim().toLowerCase()}`);
+    const res = await fetch(
+      `https://${zd.subdomain}.zendesk.com/api/v2/search.json?query=${q}&per_page=1`,
+      { headers: { Authorization: `Basic ${zd.auth}` } }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { results?: { id?: number }[] };
+    const id = data.results?.[0]?.id;
+    return id != null ? String(id) : null;
+  } catch (e) {
+    console.warn("[customers] Zendesk user search failed:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Find or create Customer by email; optionally set name; enrich with Shopify/Zendesk; update lastSeenAt. */
+export async function identifyCustomer(
+  email: string,
+  options?: { name?: string }
+): Promise<Customer> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("Email is required");
+  const providedName = options?.name?.trim() || null;
 
   let customer = await prisma.customer.findUnique({
     where: { email: normalized },
@@ -45,7 +78,7 @@ export async function identifyCustomer(email: string): Promise<Customer> {
           };
           const c = data.customers?.[0];
           if (c) {
-            const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || null;
+            const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || providedName;
             customer = await prisma.customer.create({
               data: {
                 email: (c.email ?? normalized).toLowerCase(),
@@ -63,16 +96,57 @@ export async function identifyCustomer(email: string): Promise<Customer> {
     }
     if (!customer) {
       customer = await prisma.customer.create({
-        data: { email: normalized },
+        data: { email: normalized, name: providedName },
       });
     }
   }
 
+  const updates: { lastSeenAt: Date; name?: string; shopifyId?: string; totalSpend?: number; orderCount?: number; zendeskId?: string } = {
+    lastSeenAt: new Date(),
+  };
+
+  if (providedName && !customer.name) updates.name = providedName;
+
+  if (!customer.shopifyId) {
+    const shopify = getShopifyConfig();
+    if (shopify) {
+      try {
+        const res = await fetch(
+          `${shopify.storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
+          { headers: shopify.headers }
+        );
+        if (res.ok) {
+          const data = (await res.json()) as {
+            customers?: { id: number; email?: string; first_name?: string; last_name?: string; total_spent?: string; orders_count?: number }[];
+          };
+          const c = data.customers?.[0];
+          if (c) {
+            updates.shopifyId = String(c.id);
+            updates.totalSpend = parseFloat(c.total_spent ?? "0") || 0;
+            updates.orderCount = c.orders_count ?? 0;
+            if (!customer.name) {
+              const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
+              if (name) updates.name = name;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[customers] Shopify enrich failed:", (e as Error).message);
+      }
+    }
+  }
+
+  if (!customer.zendeskId) {
+    const zdId = await findZendeskUserByEmail(normalized);
+    if (zdId) updates.zendeskId = zdId;
+  }
+
   await prisma.customer.update({
     where: { id: customer.id },
-    data: { lastSeenAt: new Date() },
+    data: updates,
   });
-  return customer;
+
+  return prisma.customer.findUniqueOrThrow({ where: { id: customer.id } });
 }
 
 /** Link a conversation to a customer. */
@@ -185,10 +259,13 @@ async function syncSummaryToZendesk(
   }
 }
 
-/** Best-effort: create HubSpot contact if needed and add note. */
-async function syncSummaryToHubSpot(customerEmail: string, summary: string): Promise<void> {
+/** Best-effort: create HubSpot contact if needed and add note. Returns contactId if found/created. */
+async function syncSummaryToHubSpot(
+  customerEmail: string,
+  summary: string
+): Promise<string | null> {
   const apiKey = process.env.HUBSPOT_API_KEY?.trim();
-  if (!apiKey) return;
+  if (!apiKey) return null;
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
@@ -209,7 +286,7 @@ async function syncSummaryToHubSpot(customerEmail: string, summary: string): Pro
     });
     if (!searchRes.ok) {
       console.warn("[customers] HubSpot search failed:", searchRes.status, await searchRes.text());
-      return;
+      return null;
     }
     const searchData = (await searchRes.json()) as { results?: { id: string }[] };
     let contactId: string | null = searchData.results?.[0]?.id ?? null;
@@ -223,12 +300,12 @@ async function syncSummaryToHubSpot(customerEmail: string, summary: string): Pro
       });
       if (!createRes.ok) {
         console.warn("[customers] HubSpot create contact failed:", createRes.status, await createRes.text());
-        return;
+        return null;
       }
       const createData = (await createRes.json()) as { id?: string };
       contactId = createData.id ?? null;
     }
-    if (!contactId) return;
+    if (!contactId) return null;
     const noteRes = await fetch("https://api.hubapi.com/crm/v3/objects/notes", {
       method: "POST",
       headers,
@@ -248,8 +325,10 @@ async function syncSummaryToHubSpot(customerEmail: string, summary: string): Pro
     if (!noteRes.ok) {
       console.warn("[customers] HubSpot note failed:", noteRes.status, await noteRes.text());
     }
+    return contactId;
   } catch (e) {
     console.warn("[customers] HubSpot sync error:", (e as Error).message);
+    return null;
   }
 }
 
@@ -287,6 +366,12 @@ export async function syncConversationEnd(conversationId: string): Promise<void>
   }
   await syncSummaryToZendesk(conversation, text);
   if (customer?.email) {
-    await syncSummaryToHubSpot(customer.email, text);
+    const hubspotId = await syncSummaryToHubSpot(customer.email, text);
+    if (hubspotId && !customer.hubspotId) {
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: { hubspotId },
+      });
+    }
   }
 }

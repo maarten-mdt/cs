@@ -211,6 +211,27 @@
     var sessionId = getSessionId();
     var currentConversationId = null;
 
+    // If embedded on Shopify/Zendesk with known user, identify immediately
+    var pageUser = typeof window !== "undefined" && window.MDT_CHAT_USER;
+    if (pageUser && pageUser.email && typeof pageUser.email === "string" && pageUser.email.trim()) {
+      fetch("/api/chat/session?sessionId=" + encodeURIComponent(sessionId))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.conversationId) {
+            var payload = { conversationId: data.conversationId, email: pageUser.email.trim() };
+            if (pageUser.name && typeof pageUser.name === "string" && pageUser.name.trim()) {
+              payload.name = pageUser.name.trim();
+            }
+            fetch("/api/chat/identify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }).catch(function () {});
+          }
+        })
+        .catch(function () {});
+    }
+
     function renderChips(questions) {
       chipsEl.innerHTML = "";
       (questions || suggested).forEach(function (label) {

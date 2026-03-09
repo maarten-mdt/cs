@@ -16,10 +16,13 @@ import { prisma } from "../lib/prisma.js";
 import { crawlWebsite } from "../services/crawler.js";
 import { syncZendeskArticles } from "../services/zendesk.js";
 import { syncGoogleDriveFolder } from "../services/googledrive.js";
+import { syncGoogleSheets } from "../services/googlesheets.js";
 import { syncShopifyProducts } from "../services/shopify.js";
 import {
   QUEUE_NAME,
   CONVERSATION_QUEUE_NAME,
+  enqueueSyncSource,
+  scheduleDailySyncAll,
   type SyncSourceJobData,
   type SyncConversationEndJobData,
 } from "../lib/queue.js";
@@ -46,6 +49,10 @@ async function runSync(sourceId: string, type: string): Promise<void> {
     await syncGoogleDriveFolder(sourceId);
     return;
   }
+  if (t === "google_sheets" || t === "googlesheets") {
+    await syncGoogleSheets(sourceId);
+    return;
+  }
   if (t === "shopify") {
     await syncShopifyProducts(sourceId);
     return;
@@ -53,10 +60,25 @@ async function runSync(sourceId: string, type: string): Promise<void> {
   throw new Error(`Unknown sync type: ${type}`);
 }
 
-const worker = new Worker<SyncSourceJobData>(
+const worker = new Worker<SyncSourceJobData & { sourceId?: string; type?: string }>(
   QUEUE_NAME,
   async (job) => {
+    if (job.name === "daily-sync-all") {
+      const sources = await prisma.knowledgeSource.findMany({
+        where: { type: { not: "MANUAL" } },
+        select: { id: true, type: true, url: true },
+      });
+      for (const s of sources) {
+        const needsUrl = ["WEBSITE", "GOOGLE_DRIVE", "GOOGLE_SHEETS"].includes(s.type);
+        if (needsUrl && !s.url?.trim()) continue;
+        const typeKey = s.type.toLowerCase();
+        await enqueueSyncSource(s.id, typeKey);
+      }
+      console.log(`[worker] Daily sync: enqueued ${sources.length} sources`);
+      return;
+    }
     const { sourceId, type } = job.data;
+    if (!sourceId || !type) throw new Error("Missing sourceId or type");
     try {
       await runSync(sourceId, type);
     } catch (err) {
@@ -94,4 +116,6 @@ conversationWorker.on("failed", (job, err) => {
   console.error(`Conversation job ${job?.id} failed:`, err?.message);
 });
 
-console.log("Sync worker started (sources + conversation-end). Waiting for jobs...");
+scheduleDailySyncAll().catch((e) => console.warn("[worker] Could not schedule daily sync:", (e as Error).message));
+
+console.log("Sync worker started (sources + conversation-end). Daily sync at 2:00 AM UTC.");

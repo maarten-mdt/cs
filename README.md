@@ -49,13 +49,38 @@ Backend runs at http://localhost:3000
 
 Optional: `data-greeting="Custom greeting"` and `data-suggested-questions="Question 1|Question 2|Question 3"`
 
-### 5. Deploy to Railway
+### 5. Identify logged-in users (Shopify / Zendesk)
+
+When the chat is embedded on a page where the customer is already logged in (e.g. Shopify store account, Zendesk Help Center), set `window.MDT_CHAT_USER` **before** the chat script loads so the conversation is linked to their account immediately:
+
+```html
+<script>
+  // Shopify Liquid: window.MDT_CHAT_USER = { email: "{{ customer.email }}", name: "{{ customer.first_name }} {{ customer.last_name }}" };
+  // Or set manually for logged-in users
+  window.MDT_CHAT_USER = { email: "user@example.com", name: "Jane Doe" };
+</script>
+<script src="/chat.js" defer></script>
+```
+
+The chat will call `POST /api/chat/identify` on load, linking the session to the customer. Customer records are enriched from Shopify (shopifyId, order history) and Zendesk (zendeskId) when available.
+
+### 6. Deploy to Railway
 
 ```bash
 ./deploy.command
 ```
 
 Or push to GitHub – Railway auto-deploys if connected.
+
+## Customer identity linking
+
+The platform links customer data across chat, Shopify, Zendesk, and HubSpot:
+
+- **Email in chat** – Typing an email or order number triggers identification; the conversation is linked to the customer.
+- **Name in chat** – Patterns like "I'm John Smith" or "My name is Jane" are detected and stored on the customer record.
+- **Shopify** – On identify, we search Shopify customers by email and store `shopifyId`, order count, and total spend.
+- **Zendesk** – We search for existing Zendesk users by email; on escalation, the ticket is created with the customer as requester and we store `zendeskId`.
+- **HubSpot** – When a conversation ends, we create/find the HubSpot contact and store `hubspotId` for future syncs.
 
 ## Data sources (knowledge base)
 
@@ -65,6 +90,7 @@ In **Admin → Data sources** you can add multiple sources; the chatbot uses thi
 |------|-------------|
 | **Website** | Enter URL; choose "Entire site" or "Only this page". Crawls product pages, docs, etc. |
 | **Google Drive** | Enter folder URL or ID. Requires `GOOGLE_SERVICE_ACCOUNT_JSON`; share the folder with the service account email. Syncs Docs (as text), text files, CSV, Markdown. |
+| **Google Sheets** | Enter spreadsheet URL or ID. Requires `GOOGLE_SERVICE_ACCOUNT_JSON`; share the sheet with the service account email. Syncs all sheets for live data. |
 | **Zendesk** | Syncs Help Center articles. Requires Zendesk env vars. |
 | **Shopify products** | Imports product catalog. Requires Shopify env vars. |
 

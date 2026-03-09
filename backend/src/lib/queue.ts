@@ -11,8 +11,10 @@ let queue: Queue<SyncSourceJobData> | null = null;
 let conversationQueue: Queue<SyncConversationEndJobData> | null = null;
 
 export interface SyncSourceJobData {
-  sourceId: string;
-  type: string;
+  sourceId?: string;
+  type?: string;
+  /** Present for daily-sync-all trigger */
+  _daily?: boolean;
 }
 
 export interface SyncConversationEndJobData {
@@ -47,6 +49,20 @@ export async function enqueueSyncSource(sourceId: string, type: string): Promise
   const q = getQueue();
   if (!q) return;
   await q.add("sync", { sourceId, type });
+}
+
+/** Schedule daily sync of all sources at 2:00 AM UTC. Idempotent — safe to call on worker startup. */
+export async function scheduleDailySyncAll(): Promise<void> {
+  const q = getQueue();
+  if (!q) return;
+  const repeatable = await q.getRepeatableJobs();
+  const exists = repeatable.some(
+    (j) => j.name === "daily-sync-all" && j.pattern === "0 2 * * *"
+  );
+  if (!exists) {
+    await q.add("daily-sync-all", { _daily: true }, { repeat: { pattern: "0 2 * * *" } });
+    console.log("[queue] Scheduled daily sync at 2:00 AM UTC");
+  }
 }
 
 export async function enqueueSyncConversationEnd(conversationId: string): Promise<void> {

@@ -259,6 +259,7 @@ adminRouter.post("/sources", async (req, res) => {
     if (source.type === "WEBSITE" && source.url) await enqueueSyncSource(source.id, "website");
     else if (source.type === "ZENDESK") await enqueueSyncSource(source.id, "zendesk");
     else if (source.type === "GOOGLE_DRIVE" && source.url) await enqueueSyncSource(source.id, "google_drive");
+    else if (source.type === "GOOGLE_SHEETS" && source.url) await enqueueSyncSource(source.id, "google_sheets");
     else if (source.type === "SHOPIFY") await enqueueSyncSource(source.id, "shopify");
     res.status(201).json(source);
   } catch (e) {

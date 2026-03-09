@@ -77,6 +77,24 @@ type MessageParam = any;
 
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
 const ORDER_NUMBER_REGEX = /\b\d{10,}\b/;
+const NAME_PATTERNS = [
+  /(?:^|\s)(?:I'?m|I am|my name is|this is|call me)\s+([A-Za-z][A-Za-z\s'-]{1,50}?)(?:\s|,|$|\.)/i,
+  /^([A-Za-z][A-Za-z\s'-]+?)(?:\s*[,;]\s*|\s+)[a-z0-9._%+-]+@/i,
+];
+
+function extractNameFromMessage(text: string): string | null {
+  const t = text.trim();
+  for (const re of NAME_PATTERNS) {
+    const m = t.match(re);
+    if (m?.[1]) {
+      const name = m[1].trim();
+      if (name.length >= 2 && name.length <= 100 && !EMAIL_REGEX.test(name)) {
+        return name;
+      }
+    }
+  }
+  return null;
+}
 
 async function tryIdentifyAndLinkConversation(
   conversationId: string,
@@ -106,8 +124,9 @@ async function tryIdentifyAndLinkConversation(
     }
   }
   if (!email) return;
+  const name = extractNameFromMessage(messageText);
   try {
-    const customer = await identifyCustomer(email);
+    const customer = await identifyCustomer(email, name ? { name } : undefined);
     await linkConversationToCustomer(conversationId, customer.id);
   } catch (e) {
     console.warn("[chat] identifyCustomer failed:", (e as Error).message);
@@ -282,7 +301,10 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId.trim() },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
+    include: {
+      messages: { orderBy: { createdAt: "asc" } },
+      customer: true,
+    },
   });
 
   if (!conversation) {
@@ -297,10 +319,30 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
 
   let ticketId: number | null = null;
   let ticketUrl: string | null = null;
+  let requesterId: number | null = null;
 
   if (hasZendesk) {
     try {
       const auth = Buffer.from(`${email}/token:${token}`).toString("base64");
+      const ticketPayload: {
+        subject: string;
+        comment: { body: string };
+        requester?: { email: string; name?: string };
+        requester_id?: number;
+      } = { subject, comment: { body } };
+
+      const customer = conversation.customer;
+      if (customer?.email) {
+        if (customer.zendeskId) {
+          ticketPayload.requester_id = parseInt(customer.zendeskId, 10);
+        } else {
+          ticketPayload.requester = {
+            email: customer.email,
+            ...(customer.name && { name: customer.name }),
+          };
+        }
+      }
+
       const response = await fetch(
         `https://${subdomain}.zendesk.com/api/v2/tickets.json`,
         {
@@ -309,25 +351,30 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
             "Content-Type": "application/json",
             Authorization: `Basic ${auth}`,
           },
-          body: JSON.stringify({
-            ticket: {
-              subject,
-              comment: { body },
-            },
-          }),
+          body: JSON.stringify({ ticket: ticketPayload }),
         }
       );
       if (!response.ok) {
         const errText = await response.text();
         throw new Error(`Zendesk API: ${response.status} ${errText}`);
       }
-      const data = (await response.json()) as { ticket?: { id?: number; url?: string } };
+      const data = (await response.json()) as {
+        ticket?: { id?: number; url?: string; requester_id?: number };
+      };
       ticketId = data.ticket?.id ?? null;
+      requesterId = data.ticket?.requester_id ?? null;
       ticketUrl = data.ticket?.url ?? (ticketId ? `https://${subdomain}.zendesk.com/agent/tickets/${ticketId}` : null);
     } catch (e) {
       console.error("Zendesk ticket creation failed:", e);
       // Still escalate conversation; return success with message
     }
+  }
+
+  if (conversation.customer && requesterId != null && !conversation.customer.zendeskId) {
+    await prisma.customer.update({
+      where: { id: conversation.customer.id },
+      data: { zendeskId: String(requesterId) },
+    }).catch((e) => console.warn("[chat] Failed to update customer zendeskId:", (e as Error).message));
   }
 
   await prisma.conversation.update({
@@ -350,9 +397,9 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
   });
 });
 
-// POST /api/chat/identify — link conversation to customer by email
+// POST /api/chat/identify — link conversation to customer by email (and optional name)
 chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
-  const { conversationId, email } = req.body ?? {};
+  const { conversationId, email, name } = req.body ?? {};
   if (!conversationId || typeof conversationId !== "string" || !conversationId.trim()) {
     return res.status(400).json({ error: "conversationId is required" });
   }
@@ -366,7 +413,9 @@ chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
     if (!conversation) {
       return res.status(404).json({ error: "Conversation not found" });
     }
-    const customer = await identifyCustomer(email.trim());
+    const customer = await identifyCustomer(email.trim(), {
+      name: typeof name === "string" && name.trim() ? name.trim() : undefined,
+    });
     await linkConversationToCustomer(conversation.id, customer.id);
     return res.json({ success: true, customerId: customer.id });
   } catch (e) {
