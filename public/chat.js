@@ -18,8 +18,35 @@
 
   function formatAssistantText(text) {
     if (!text) return "";
-    var out = escapeHtml(text);
-    out = out.replace(/\n/g, "<br>");
+    var escaped = escapeHtml(text);
+    var lines = escaped.split(/\r\n|\r|\n/);
+    var html = [];
+    var inUl = false;
+    var inOl = false;
+    function closeLists() {
+      if (inUl) { html.push("</ul>", "<br>"); inUl = false; }
+      if (inOl) { html.push("</ol>", "<br>"); inOl = false; }
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var ulMatch = /^\s*[-*]\s+(.+)$/.exec(line);
+      var olMatch = /^\s*\d+\.\s+(.+)$/.exec(line);
+      if (ulMatch) {
+        if (inOl) { html.push("</ol>"); inOl = false; }
+        if (!inUl) { html.push("<ul>"); inUl = true; }
+        html.push("<li>", ulMatch[1], "</li>");
+      } else if (olMatch) {
+        if (inUl) { html.push("</ul>"); inUl = false; }
+        if (!inOl) { html.push("<ol>"); inOl = true; }
+        html.push("<li>", olMatch[1], "</li>");
+      } else {
+        closeLists();
+        if (line.length > 0) html.push(line);
+        if (i < lines.length - 1) html.push("<br>");
+      }
+    }
+    closeLists();
+    var out = html.join("");
     out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
     return out;

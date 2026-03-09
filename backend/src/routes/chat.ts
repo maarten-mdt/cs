@@ -3,10 +3,16 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../lib/prisma.js";
 import { ConversationStatus, MessageRole } from "@prisma/client";
 import { getOrderByNumber, getOrdersByEmail } from "../services/orders.js";
+import { searchKnowledge } from "../services/search.js";
+import {
+  identifyCustomer,
+  linkConversationToCustomer,
+} from "../services/customers.js";
+import { enqueueSyncConversationEnd } from "../lib/queue.js";
 
 export const chatRouter = Router();
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful support assistant for MDT (Modular Driven Technologies). You help customers with product questions, orders, compatibility, and installation. Be concise and friendly.`;
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful support assistant for MDT (Modular Driven Technologies). You help customers with product questions, orders, compatibility, and installation. Be concise and friendly. Use line breaks between paragraphs and use markdown-style lists (- or 1. 2.) when listing steps or items so the reply is easy to read.`;
 
 const getOrderInfoTool = {
   name: "get_order_info" as const,
@@ -18,6 +24,18 @@ const getOrderInfoTool = {
       email: { type: "string" as const, description: "Customer email address" },
     },
     minProperties: 1,
+  },
+};
+
+const searchKnowledgeTool = {
+  name: "search_knowledge" as const,
+  description: "Search the knowledge base (website/docs) for information. Use when the user asks about products, compatibility, installation, or general support topics.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      query: { type: "string" as const, description: "Search query" },
+    },
+    required: ["query"],
   },
 };
 
@@ -39,8 +57,61 @@ async function executeGetOrderInfo(input: { order_number?: string; email?: strin
   }
 }
 
+async function executeSearchKnowledge(input: { query?: string }): Promise<unknown> {
+  try {
+    const q = input.query != null ? String(input.query).trim() : "";
+    if (!q) return { chunks: [], message: "Query is required." };
+    const chunks = await searchKnowledge(q, 14);
+    return {
+      chunks: chunks.map((c) => ({ title: c.title, url: c.url, content: c.content })),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Search failed.";
+    return { chunks: [], error: message };
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type MessageParam = any;
+
+const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+const ORDER_NUMBER_REGEX = /\b\d{10,}\b/;
+
+async function tryIdentifyAndLinkConversation(
+  conversationId: string,
+  messageText: string
+): Promise<void> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { customerId: true },
+  });
+  if (!conv) return;
+  if (conv.customerId) return;
+
+  let email: string | null = null;
+  const emailMatch = messageText.match(EMAIL_REGEX);
+  if (emailMatch) {
+    email = emailMatch[0].trim().toLowerCase();
+  }
+  if (!email && ORDER_NUMBER_REGEX.test(messageText)) {
+    const orderNumMatch = messageText.match(ORDER_NUMBER_REGEX);
+    if (orderNumMatch) {
+      try {
+        const order = await getOrderByNumber(orderNumMatch[0]);
+        if (order?.email) email = order.email.trim().toLowerCase();
+      } catch {
+        // ignore
+      }
+    }
+  }
+  if (!email) return;
+  try {
+    const customer = await identifyCustomer(email);
+    await linkConversationToCustomer(conversationId, customer.id);
+  } catch (e) {
+    console.warn("[chat] identifyCustomer failed:", (e as Error).message);
+  }
+}
 
 // POST /api/chat/message — public, stream AI response via SSE, with optional order lookup tool
 chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
@@ -83,6 +154,8 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       },
     });
 
+    await tryIdentifyAndLinkConversation(conversation.id, (message as string).trim());
+
     const initialMessages: MessageParam[] = [
       ...recentMessages
         .filter((m) => m.role !== MessageRole.SYSTEM)
@@ -102,7 +175,11 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
     const anthropic = new Anthropic({ apiKey });
     let fullText = "";
     const hasOrderTool = !!(process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ACCESS_TOKEN);
-    const tools = hasOrderTool ? [getOrderInfoTool] : undefined;
+    const hasKnowledgeTool = !!process.env.OPENAI_API_KEY?.trim();
+    const tools: Array<typeof getOrderInfoTool | typeof searchKnowledgeTool> = [];
+    if (hasOrderTool) tools.push(getOrderInfoTool);
+    if (hasKnowledgeTool) tools.push(searchKnowledgeTool);
+    const toolsConfig = tools.length > 0 ? tools : undefined;
 
     let messages: MessageParam[] = initialMessages;
 
@@ -112,7 +189,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
         max_tokens: 1024,
         system: DEFAULT_SYSTEM_PROMPT,
         messages,
-        tools,
+        tools: toolsConfig,
       });
 
       stream.on("text", (delta: string) => {
@@ -133,8 +210,12 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       const toolResults: { type: "tool_result"; tool_use_id: string; content: string }[] = [];
       for (const tu of toolUses) {
         const id = tu.id ?? "";
-        const input = (tu.input ?? {}) as { order_number?: string; email?: string };
-        const result = await executeGetOrderInfo(input);
+        const input = (tu.input ?? {}) as Record<string, unknown>;
+        const name = tu.name ?? "";
+        let result: unknown;
+        if (name === "get_order_info") result = await executeGetOrderInfo(input as { order_number?: string; email?: string });
+        else if (name === "search_knowledge") result = await executeSearchKnowledge(input as { query?: string });
+        else result = { error: "Unknown tool" };
         toolResults.push({ type: "tool_result", tool_use_id: id, content: JSON.stringify(result) });
       }
 
@@ -256,6 +337,7 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
       ...(ticketId != null && { zendeskTicketId: String(ticketId) }),
     },
   });
+  await enqueueSyncConversationEnd(conversation.id);
 
   if (hasZendesk && ticketId != null) {
     return res.json({ success: true, ticketId, ticketUrl });
@@ -265,4 +347,49 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
     ticketId: null,
     message: "Ticket submitted — our team will be in touch.",
   });
+});
+
+// POST /api/chat/identify — link conversation to customer by email
+chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
+  const { conversationId, email } = req.body ?? {};
+  if (!conversationId || typeof conversationId !== "string" || !conversationId.trim()) {
+    return res.status(400).json({ error: "conversationId is required" });
+  }
+  if (!email || typeof email !== "string" || !email.trim()) {
+    return res.status(400).json({ error: "email is required" });
+  }
+  try {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId.trim() },
+    });
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+    const customer = await identifyCustomer(email.trim());
+    await linkConversationToCustomer(conversation.id, customer.id);
+    return res.json({ success: true, customerId: customer.id });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Identification failed";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/chat/resolve — mark conversation resolved and enqueue summary sync
+chatRouter.post("/api/chat/resolve", async (req: Request, res: Response) => {
+  const { conversationId } = req.body ?? {};
+  if (!conversationId || typeof conversationId !== "string" || !conversationId.trim()) {
+    return res.status(400).json({ error: "conversationId is required" });
+  }
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId.trim() },
+  });
+  if (!conversation) {
+    return res.status(404).json({ error: "Conversation not found" });
+  }
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: { status: ConversationStatus.RESOLVED, resolvedAt: new Date() },
+  });
+  await enqueueSyncConversationEnd(conversation.id);
+  return res.json({ success: true });
 });
