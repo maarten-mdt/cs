@@ -10,6 +10,7 @@
     "db:baseline": "node run-baseline.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@prisma/client": "^5.22.0",
     "bullmq": "^5.25.0",
     "connect-pg-simple": "^10.0.0",

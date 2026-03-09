@@ -11,6 +11,7 @@ import connectPgSimple from "connect-pg-simple";
 import { routes } from "./routes/index.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
+import { chatRouter } from "./routes/chat.js";
 import "./lib/passport.js";
 import passport from "passport";
 
@@ -54,6 +55,7 @@ app.use(passport.session());
 
 app.use("/", authRouter);
 app.use("/", adminRouter);
+app.use("/", chatRouter);
 app.use("/", routes);
 
 // Public home page and chat script
