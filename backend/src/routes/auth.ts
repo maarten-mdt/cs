@@ -43,7 +43,13 @@ authRouter.get("/auth/google/callback", async (req, res, next) => {
   }
 }, async (req: Request, res: Response) => {
   const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
-  res.redirect(`${frontendUrl}/admin`);
+  // Save session to store before sending redirect so the cookie is set with the session id
+  req.session.save((err) => {
+    if (err) {
+      console.error("[auth] Session save error:", err);
+    }
+    res.redirect(`${frontendUrl}/admin`);
+  });
 });
 
 authRouter.get("/auth/failed", (_req: Request, res: Response) => {

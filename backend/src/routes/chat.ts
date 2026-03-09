@@ -2,12 +2,47 @@ import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../lib/prisma.js";
 import { ConversationStatus, MessageRole } from "@prisma/client";
+import { getOrderByNumber, getOrdersByEmail } from "../services/orders.js";
 
 export const chatRouter = Router();
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful support assistant for MDT (Modular Driven Technologies). You help customers with product questions, orders, compatibility, and installation. Be concise and friendly.`;
 
-// POST /api/chat/message — public, stream AI response via SSE
+const getOrderInfoTool = {
+  name: "get_order_info" as const,
+  description: "Look up a customer order by order number or email. Use order_number for a specific order (e.g. #1234), or email to get the customer's last 5 orders.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      order_number: { type: "string" as const, description: "Order number (e.g. #1234 or 1234)" },
+      email: { type: "string" as const, description: "Customer email address" },
+    },
+    minProperties: 1,
+  },
+};
+
+async function executeGetOrderInfo(input: { order_number?: string; email?: string }): Promise<unknown> {
+  try {
+    if (input.order_number != null && String(input.order_number).trim()) {
+      const order = await getOrderByNumber(String(input.order_number).trim());
+      if (!order) return { found: false, message: "No order found with that number." };
+      return { found: true, order };
+    }
+    if (input.email != null && String(input.email).trim()) {
+      const orders = await getOrdersByEmail(String(input.email).trim());
+      return { found: orders.length > 0, orders };
+    }
+    return { found: false, message: "Provide either order_number or email." };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Order lookup failed.";
+    return { found: false, error: message };
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MessageParam = any;
+
+// POST /api/chat/message — public, stream AI response via SSE, with optional order lookup tool
 chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
   const { sessionId, message, pageUrl } = req.body ?? {};
 
@@ -48,11 +83,11 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       },
     });
 
-    const messagesForClaude: { role: "user" | "assistant"; content: string }[] = [
+    const initialMessages: MessageParam[] = [
       ...recentMessages
         .filter((m) => m.role !== MessageRole.SYSTEM)
         .map((m) => ({
-          role: m.role === MessageRole.ASSISTANT ? ("assistant" as const) : ("user" as const),
+          role: (m.role === MessageRole.ASSISTANT ? "assistant" : "user") as "user" | "assistant",
           content: m.content,
         })),
       { role: "user" as const, content: (message as string).trim() },
@@ -66,25 +101,48 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     const anthropic = new Anthropic({ apiKey });
     let fullText = "";
+    const hasOrderTool = !!(process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ACCESS_TOKEN);
+    const tools = hasOrderTool ? [getOrderInfoTool] : undefined;
 
-    const stream = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: DEFAULT_SYSTEM_PROMPT,
-      messages: messagesForClaude,
-      stream: true,
-    });
+    let messages: MessageParam[] = initialMessages;
 
-    for await (const event of stream) {
-      if (event.type === "content_block_delta") {
-        const delta = event.delta;
-        if (delta && typeof delta === "object" && "text" in delta && typeof (delta as { text: string }).text === "string") {
-          const text = (delta as { text: string }).text;
-          fullText += text;
-          res.write(`data: ${JSON.stringify({ type: "delta", text })}\n\n`);
-          res.flushHeaders?.();
-        }
+    while (true) {
+      const stream = anthropic.messages.stream({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        system: DEFAULT_SYSTEM_PROMPT,
+        messages,
+        tools,
+      });
+
+      stream.on("text", (delta: string) => {
+        fullText += delta;
+        res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+        res.flushHeaders?.();
+      });
+
+      await stream.done();
+      const finalMsg = await stream.finalMessage();
+      const content = (finalMsg as { content?: { type: string; id?: string; name?: string; input?: unknown }[] }).content ?? [];
+      const toolUses = content.filter((b) => b.type === "tool_use");
+
+      if (toolUses.length === 0) {
+        break;
       }
+
+      const toolResults: { type: "tool_result"; tool_use_id: string; content: string }[] = [];
+      for (const tu of toolUses) {
+        const id = tu.id ?? "";
+        const input = (tu.input ?? {}) as { order_number?: string; email?: string };
+        const result = await executeGetOrderInfo(input);
+        toolResults.push({ type: "tool_result", tool_use_id: id, content: JSON.stringify(result) });
+      }
+
+      messages = [
+        ...messages,
+        { role: "assistant" as const, content } as MessageParam,
+        { role: "user" as const, content: toolResults } as MessageParam,
+      ];
     }
 
     res.write(`data: ${JSON.stringify({ type: "done", conversationId: conversation.id })}\n\n`);
@@ -103,11 +161,11 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
     res.end();
   } catch (err) {
     console.error("[chat/message]", err);
-    const message = err instanceof Error ? err.message : "An error occurred";
+    const errorMessage = err instanceof Error ? err.message : "An error occurred";
     if (!res.headersSent) {
-      res.status(500).json({ error: message });
+      res.status(500).json({ error: errorMessage });
     } else {
-      res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "error", message: errorMessage })}\n\n`);
       res.end();
     }
   }

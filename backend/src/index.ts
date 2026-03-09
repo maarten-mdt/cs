@@ -25,6 +25,10 @@ await import("./lib/passport-minimal.js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 const frontendUrl = process.env.FRONTEND_URL;
 const publicUrl = process.env.PUBLIC_URL;
 const corsOrigins: string[] = [frontendUrl, publicUrl].filter(
@@ -53,6 +57,7 @@ app.use(
       secure: process.env.NODE_ENV === "production",
       maxAge: 8 * 60 * 60 * 1000,
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      ...(process.env.COOKIE_DOMAIN && { domain: process.env.COOKIE_DOMAIN }),
     },
   })
 );
