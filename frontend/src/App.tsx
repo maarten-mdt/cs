@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthGuard } from "./components/AuthGuard";
+import { RequireAdmin } from "./components/RequireAdmin";
 import { AppLayout } from "./components/AppLayout";
 import { useAuthStore } from "./stores/useAuthStore";
 import { LoginPage } from "./pages/LoginPage";
@@ -35,7 +36,7 @@ export default function App() {
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

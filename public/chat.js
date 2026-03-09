@@ -191,6 +191,19 @@
     "How do I install the chassis?",
   ];
 
+  function loadSuggestedQuestions(callback) {
+    fetch("/api/suggested-questions")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.questions && data.questions.length > 0) {
+          callback(data.questions);
+        } else {
+          callback(suggested);
+        }
+      })
+      .catch(function () { callback(suggested); });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     var form = document.getElementById("chat-form");
     var input = document.getElementById("chat-input");
@@ -198,7 +211,9 @@
     var sessionId = getSessionId();
     var currentConversationId = null;
 
-    suggested.forEach(function (label) {
+    function renderChips(questions) {
+      chipsEl.innerHTML = "";
+      (questions || suggested).forEach(function (label) {
       var btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = label;
@@ -214,7 +229,12 @@
       });
       chipsEl.appendChild(btn);
     });
-    showChipsOnlyWhenEmpty();
+    }
+
+    loadSuggestedQuestions(function (questions) {
+      renderChips(questions);
+      showChipsOnlyWhenEmpty();
+    });
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();

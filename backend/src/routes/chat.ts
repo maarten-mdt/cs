@@ -9,6 +9,7 @@ import {
   linkConversationToCustomer,
 } from "../services/customers.js";
 import { enqueueSyncConversationEnd } from "../lib/queue.js";
+import { getConfig, getConfigFromDb } from "../lib/config.js";
 
 export const chatRouter = Router();
 
@@ -187,7 +188,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       const stream = anthropic.messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: DEFAULT_SYSTEM_PROMPT,
+        system: getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT,
         messages,
         tools: toolsConfig,
       });
@@ -392,4 +393,22 @@ chatRouter.post("/api/chat/resolve", async (req: Request, res: Response) => {
   });
   await enqueueSyncConversationEnd(conversation.id);
   return res.json({ success: true });
+});
+
+// GET /api/suggested-questions — public, for chips on home page
+chatRouter.get("/api/suggested-questions", async (_req: Request, res: Response) => {
+  try {
+    const raw = await getConfigFromDb("SUGGESTED_QUESTIONS");
+    const defaultQs = ["Where is my order?", "Is this compatible with my rifle?", "How do I install the chassis?"];
+    if (!raw) return res.json({ questions: defaultQs });
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        return res.json({ questions: parsed.slice(0, 10) });
+      }
+    } catch {}
+    res.json({ questions: defaultQs });
+  } catch {
+    res.json({ questions: ["Where is my order?", "Is this compatible with my rifle?", "How do I install the chassis?"] });
+  }
 });

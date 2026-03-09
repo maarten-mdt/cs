@@ -22,6 +22,10 @@ loadEnv({ path: path.resolve(__dirname, "../../.env") });
 // Passport: minimal only so startup never touches passport-google-oauth20. Admin login uses lazy Google strategy in auth routes.
 await import("./lib/passport-minimal.js");
 
+// Load AppConfig into env overlay (after DB is available)
+const { loadConfigFromDb } = await import("./lib/config.js");
+loadConfigFromDb().catch((e) => console.warn("[config] Load from DB failed:", (e as Error).message));
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

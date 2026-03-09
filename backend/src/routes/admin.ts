@@ -2,7 +2,8 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { prisma } from "../lib/prisma.js";
 import { enqueueSyncSource } from "../lib/queue.js";
-import { SourceType, ConversationStatus, type Prisma } from "@prisma/client";
+import { getConfig, saveConfig, getConfigFromDb } from "../lib/config.js";
+import { SourceType, ConversationStatus, type Prisma, Role } from "@prisma/client";
 import { getOrdersByEmail } from "../services/orders.js";
 
 export const adminRouter = Router();
@@ -337,5 +338,310 @@ adminRouter.delete("/sources/:id", async (req, res) => {
     if ((e as { code?: string })?.code === "P2025") return res.status(404).json({ error: "Source not found" });
     console.error(e);
     res.status(500).json({ error: "Failed to delete source" });
+  }
+});
+
+// --- Knowledge: system prompt & suggested questions (Chunk 10) ---
+
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful support assistant for MDT (Modular Driven Technologies). You help customers with product questions, orders, compatibility, and installation. Be concise and friendly. Use line breaks between paragraphs and use markdown-style lists (- or 1. 2.) when listing steps or items so the reply is easy to read.`;
+
+adminRouter.get("/knowledge/system-prompt", async (_req, res) => {
+  try {
+    const value = await getConfigFromDb("SYSTEM_PROMPT");
+    res.json({ systemPrompt: value ?? DEFAULT_SYSTEM_PROMPT });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load system prompt" });
+  }
+});
+
+adminRouter.put("/knowledge/system-prompt", async (req, res) => {
+  try {
+    const { systemPrompt } = req.body as { systemPrompt?: string };
+    const value = typeof systemPrompt === "string" ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
+    await saveConfig("SYSTEM_PROMPT", value);
+    res.json({ systemPrompt: value });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to save system prompt" });
+  }
+});
+
+const DEFAULT_SUGGESTED_QUESTIONS = ["Where is my order?", "Is this compatible with my rifle?", "How do I install the chassis?"];
+
+adminRouter.get("/knowledge/suggested-questions", async (_req, res) => {
+  try {
+    const raw = await getConfigFromDb("SUGGESTED_QUESTIONS");
+    let questions: string[] = DEFAULT_SUGGESTED_QUESTIONS;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) questions = parsed.slice(0, 10);
+      } catch {}
+    }
+    res.json({ questions });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load suggested questions" });
+  }
+});
+
+adminRouter.put("/knowledge/suggested-questions", async (req, res) => {
+  try {
+    const { questions } = req.body as { questions?: unknown };
+    const arr = Array.isArray(questions) ? questions.filter((x) => typeof x === "string").slice(0, 10) : DEFAULT_SUGGESTED_QUESTIONS;
+    await saveConfig("SUGGESTED_QUESTIONS", JSON.stringify(arr));
+    res.json({ questions: arr });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to save suggested questions" });
+  }
+});
+
+// --- Analytics (Chunk 10) ---
+
+adminRouter.get("/analytics/summary", async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(7, parseInt(String(req.query.days), 10) || 30));
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    since.setHours(0, 0, 0, 0);
+
+    const [conversations, resolved, escalated] = await Promise.all([
+      prisma.conversation.count({ where: { createdAt: { gte: since } } }),
+      prisma.conversation.count({ where: { status: "RESOLVED", updatedAt: { gte: since } } }),
+      prisma.conversation.count({ where: { status: "ESCALATED", escalatedAt: { gte: since } } }),
+    ]);
+
+    const withMessages = await prisma.conversation.findMany({
+      where: { createdAt: { gte: since } },
+      include: { _count: { select: { messages: true } } },
+    });
+    const totalMessages = withMessages.reduce((s, c) => s + c._count.messages, 0);
+    const avgMessages = conversations > 0 ? Math.round((totalMessages / conversations) * 10) / 10 : 0;
+    const deflectionRate = conversations > 0 ? Math.round((1 - escalated / conversations) * 1000) / 10 : 0;
+
+    const topics = await prisma.conversation.groupBy({
+      by: ["topic"],
+      where: { createdAt: { gte: since }, topic: { not: null } },
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 5,
+    });
+    const topTopics = topics.map((t) => ({ topic: t.topic || "(none)", count: t._count.id }));
+
+    const daily = await prisma.$queryRaw<{ day: string; count: bigint }[]>`
+      SELECT date_trunc('day', "createdAt")::date::text as day, count(*)::bigint as count
+      FROM "Conversation"
+      WHERE "createdAt" >= ${since}
+      GROUP BY date_trunc('day', "createdAt")::date
+      ORDER BY day
+    `;
+    const dailyVolume = daily.map((d) => ({ date: d.day, count: Number(d.count) }));
+
+    res.json({
+      totalConversations: conversations,
+      resolvedCount: resolved,
+      escalatedCount: escalated,
+      deflectionRate,
+      avgMessages,
+      topTopics,
+      dailyVolume,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load analytics" });
+  }
+});
+
+// --- Connections (Chunk 10): get/set config, test ---
+
+const CONNECTION_KEYS: Record<string, string[]> = {
+  shopify: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ACCESS_TOKEN"],
+  zendesk: ["ZENDESK_SUBDOMAIN", "ZENDESK_EMAIL", "ZENDESK_API_TOKEN"],
+  hubspot: ["HUBSPOT_API_KEY"],
+  acumatica: ["ACUMATICA_API_URL", "ACUMATICA_USERNAME", "ACUMATICA_PASSWORD"],
+  anthropic: ["ANTHROPIC_API_KEY"],
+  google: ["GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_DRIVE_ACCESS_TOKEN"],
+};
+
+function mask(s: string): string {
+  if (!s || s.length < 8) return "••••";
+  return s.slice(0, 4) + "••••" + s.slice(-2);
+}
+
+adminRouter.get("/connections", async (_req, res) => {
+  try {
+    const integrations: Record<string, { configured: boolean; keys?: Record<string, string> }> = {};
+    for (const [name, keys] of Object.entries(CONNECTION_KEYS)) {
+      const values: Record<string, string> = {};
+      for (const key of keys) {
+        const v = getConfig(key);
+        values[key] = v && v.trim() ? mask(v) : "";
+      }
+      integrations[name] = { configured: keys.every((k) => getConfig(k)?.trim()), keys: values };
+    }
+    res.json({ integrations });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load connections" });
+  }
+});
+
+adminRouter.put("/connections", async (req, res) => {
+  try {
+    const { integration, values } = req.body as { integration?: string; values?: Record<string, string> };
+    if (!integration || !CONNECTION_KEYS[integration]) {
+      return res.status(400).json({ error: "Invalid integration" });
+    }
+    const keys = CONNECTION_KEYS[integration];
+    const toSave = values ?? {};
+    for (const key of keys) {
+      if (key in toSave && typeof toSave[key] === "string") {
+        await saveConfig(key, toSave[key].trim());
+      }
+    }
+    const integrations: Record<string, { configured: boolean }> = {};
+    integrations[integration] = { configured: keys.every((k) => getConfig(k)?.trim()) };
+    res.json({ integrations });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to save connection" });
+  }
+});
+
+adminRouter.post("/connections/test", async (req, res) => {
+  try {
+    const { integration } = req.body as { integration?: string };
+    if (!integration || !CONNECTION_KEYS[integration]) {
+      return res.status(400).json({ error: "Invalid integration" });
+    }
+    let message: string;
+    try {
+      if (integration === "shopify") {
+        const domain = getConfig("SHOPIFY_STORE_DOMAIN")?.trim();
+        const token = getConfig("SHOPIFY_ACCESS_TOKEN")?.trim();
+        if (!domain || !token) throw new Error("Store domain and access token are required");
+        const url = (domain.startsWith("http") ? domain : `https://${domain}`).replace(/\/$/, "");
+        const r = await fetch(`${url}/admin/api/2024-01/shop.json`, {
+          headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+        message = "Connected successfully";
+      } else if (integration === "zendesk") {
+        const sub = getConfig("ZENDESK_SUBDOMAIN")?.trim();
+        const email = getConfig("ZENDESK_EMAIL")?.trim();
+        const token = getConfig("ZENDESK_API_TOKEN")?.trim();
+        if (!sub || !email || !token) throw new Error("Subdomain, email, and API token are required");
+        const clean = sub.replace(/\.zendesk\.com$/i, "");
+        const r = await fetch(`https://${clean}.zendesk.com/api/v2/users/me.json`, {
+          headers: { Authorization: `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+        message = "Connected successfully";
+      } else if (integration === "hubspot") {
+        const key = getConfig("HUBSPOT_API_KEY")?.trim();
+        if (!key) throw new Error("API key is required");
+        const r = await fetch("https://api.hubapi.com/account-info/v3/details", {
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+        message = "Connected successfully";
+      } else if (integration === "anthropic") {
+        const key = getConfig("ANTHROPIC_API_KEY")?.trim();
+        if (!key) throw new Error("API key is required");
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 5, messages: [{ role: "user", content: "Hi" }] }),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
+        }
+        message = "Connected successfully";
+      } else if (integration === "acumatica" || integration === "google") {
+        message = "Test not implemented for this integration";
+      } else {
+        message = "Unknown integration";
+      }
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+      return res.status(400).json({ error: message });
+    }
+    res.json({ ok: true, message });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to test connection" });
+  }
+});
+
+// --- Settings (Chunk 10): ADMIN only ---
+
+adminRouter.get("/users", requireAuth([Role.ADMIN]), async (_req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { id: true, email: true, name: true, role: true, lastLoginAt: true, createdAt: true },
+    });
+    res.json(users);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to list users" });
+  }
+});
+
+adminRouter.post("/users/invite", requireAuth([Role.ADMIN]), async (req, res) => {
+  try {
+    const { email, name, role } = req.body as { email?: string; name?: string; role?: string };
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    const r = (role?.toUpperCase() || "SUPPORT") as Role;
+    if (!Object.values(Role).includes(r)) return res.status(400).json({ error: "Invalid role" });
+    const existing = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (existing) return res.status(400).json({ error: "User already exists with this email" });
+    const user = await prisma.user.create({
+      data: { email: email.trim().toLowerCase(), name: name?.trim() || null, role: r },
+    });
+    res.status(201).json({
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      message: "User created. They can sign in with Google using this email (ensure ALLOWED_EMAIL_DOMAIN allows their domain).",
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to invite user" });
+  }
+});
+
+adminRouter.patch("/users/:id", requireAuth([Role.ADMIN]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role } = req.body as { name?: string; role?: string };
+    const data: { name?: string | null; role?: Role } = {};
+    if (name !== undefined) data.name = name?.trim() || null;
+    if (role !== undefined) {
+      const r = role?.toUpperCase() as Role;
+      if (!Object.values(Role).includes(r)) return res.status(400).json({ error: "Invalid role" });
+      data.role = r;
+    }
+    const user = await prisma.user.update({ where: { id }, data });
+    res.json(user);
+  } catch (e) {
+    if ((e as { code?: string })?.code === "P2025") return res.status(404).json({ error: "User not found" });
+    console.error(e);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+adminRouter.delete("/users/:id", requireAuth([Role.ADMIN]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.user.delete({ where: { id } });
+    res.status(204).send();
+  } catch (e) {
+    if ((e as { code?: string })?.code === "P2025") return res.status(404).json({ error: "User not found" });
+    console.error(e);
+    res.status(500).json({ error: "Failed to delete user" });
   }
 });

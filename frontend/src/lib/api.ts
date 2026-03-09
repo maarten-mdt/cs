@@ -49,7 +49,81 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ mergeFromId }),
     }),
+
+  // Sources (Knowledge)
+  getSources: () => request<SourceListItem[]>("/sources"),
+  getSource: (id: string) => request<SourceDetail>(`/sources/${id}`),
+  createSource: (body: { name: string; type: string; url?: string; maxPages?: number }) =>
+    request<SourceListItem>("/sources", { method: "POST", body: JSON.stringify(body) }),
+  updateSource: (id: string, body: { name?: string; maxPages?: number; url?: string | null }) =>
+    request<SourceListItem>(`/sources/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteSource: (id: string) => request<void>(`/sources/${id}`, { method: "DELETE" }),
+  syncSource: (id: string) => request<{ ok: boolean }>(`/sources/${id}/sync`, { method: "POST" }),
+
+  getSystemPrompt: () => request<{ systemPrompt: string }>("/knowledge/system-prompt"),
+  putSystemPrompt: (systemPrompt: string) =>
+    request<{ systemPrompt: string }>("/knowledge/system-prompt", { method: "PUT", body: JSON.stringify({ systemPrompt }) }),
+  getSuggestedQuestions: () => request<{ questions: string[] }>("/knowledge/suggested-questions"),
+  putSuggestedQuestions: (questions: string[]) =>
+    request<{ questions: string[] }>("/knowledge/suggested-questions", { method: "PUT", body: JSON.stringify({ questions }) }),
+
+  getAnalyticsSummary: (days: number) =>
+    request<AnalyticsSummary>(`/analytics/summary?days=${days}`),
+
+  getConnections: () => request<{ integrations: Record<string, { configured: boolean; keys?: Record<string, string> }> }>("/connections"),
+  putConnections: (integration: string, values: Record<string, string>) =>
+    request<{ integrations: Record<string, { configured: boolean }> }>("/connections", {
+      method: "PUT",
+      body: JSON.stringify({ integration, values }),
+    }),
+  testConnection: (integration: string) =>
+    request<{ ok: boolean; message: string }>("/connections/test", {
+      method: "POST",
+      body: JSON.stringify({ integration }),
+    }),
+
+  getUsers: () => request<UserListItem[]>("/users"),
+  inviteUser: (body: { email: string; name?: string; role?: string }) =>
+    request<{ user: UserListItem; message: string }>("/users/invite", { method: "POST", body: JSON.stringify(body) }),
+  updateUser: (id: string, body: { name?: string; role?: string }) =>
+    request<UserListItem>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteUser: (id: string) => request<void>(`/users/${id}`, { method: "DELETE" }),
 };
+
+export interface SourceListItem {
+  id: string;
+  name: string;
+  type: string;
+  url: string | null;
+  maxPages: number;
+  chunkCount: number;
+  lastSyncedAt: string | null;
+  status: string;
+  errorMessage: string | null;
+}
+
+export interface SourceDetail extends SourceListItem {
+  chunks: { id: string; content: string; url: string | null; title: string | null; createdAt: string }[];
+}
+
+export interface AnalyticsSummary {
+  totalConversations: number;
+  resolvedCount: number;
+  escalatedCount: number;
+  deflectionRate: number;
+  avgMessages: number;
+  topTopics: { topic: string; count: number }[];
+  dailyVolume: { date: string; count: number }[];
+}
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
 
 export interface ConversationListItem {
   id: string;
