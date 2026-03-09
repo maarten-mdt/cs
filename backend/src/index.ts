@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config as loadEnv } from "dotenv";
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
@@ -13,6 +13,7 @@ import { routes } from "./routes/index.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { chatRouter } from "./routes/chat.js";
+import { rateLimitChat } from "./middleware/rateLimitChat.js";
 import passport from "passport";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,9 +41,33 @@ const corsOrigins: string[] = [frontendUrl, publicUrl].filter(
 );
 
 app.use(helmet());
-app.use(cors({ origin: corsOrigins.length > 0 ? corsOrigins : true, credentials: true }));
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? corsOrigins.length > 0
+          ? corsOrigins
+          : false
+        : corsOrigins.length > 0
+          ? corsOrigins
+          : true,
+    credentials: true,
+  })
+);
 app.use(morgan("combined"));
 app.use(express.json());
+
+// Health check (no auth, no rate limit)
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version ?? "1.0.0",
+  });
+});
+
+// Rate limit chat API: 20 requests per minute per IP
+app.use("/api/chat", rateLimitChat);
 
 const PgSession = connectPgSimple(session);
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -82,6 +107,14 @@ const adminPath = path.join(__dirname, "../../frontend/dist");
 app.use("/admin", express.static(adminPath));
 app.get("/admin/*", (_req, res) => {
   res.sendFile(path.join(adminPath, "index.html"));
+});
+
+// Production error handler: never expose stack, log full error, return generic message
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.listen(PORT, () => {

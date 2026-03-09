@@ -1,0 +1,8 @@
+# Railway deployment for MDT Support backend.
+# Set this service's root to the backend directory (or run from repo root with startCommand below).
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node dist/index.js"
