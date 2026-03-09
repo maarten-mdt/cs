@@ -42,8 +42,8 @@ authRouter.get("/auth/google/callback", async (req, res, next) => {
     res.redirect(`${frontendUrl}/admin/login?error=config`);
   }
 }, async (req: Request, res: Response) => {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  res.redirect(`${frontendUrl}/admin/`);
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+  res.redirect(`${frontendUrl}/admin`);
 });
 
 authRouter.get("/auth/failed", (_req: Request, res: Response) => {

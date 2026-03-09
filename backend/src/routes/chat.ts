@@ -102,6 +102,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     res.end();
   } catch (err) {
+    console.error("[chat/message]", err);
     const message = err instanceof Error ? err.message : "An error occurred";
     if (!res.headersSent) {
       res.status(500).json({ error: message });

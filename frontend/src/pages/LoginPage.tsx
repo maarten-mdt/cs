@@ -1,9 +1,20 @@
-import { useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 export function LoginPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const errorDomain = searchParams.get("error") === "domain";
+  const errorConfig = searchParams.get("error") === "config";
   const apiUrl = import.meta.env.VITE_API_URL || "";
+
+  useEffect(() => {
+    fetch(`${apiUrl}/auth/me`, { credentials: "include" })
+      .then((res) => {
+        if (res.ok) navigate("/", { replace: true });
+      })
+      .catch(() => {});
+  }, [apiUrl, navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#111213]">
@@ -15,6 +26,11 @@ export function LoginPage() {
         {errorDomain && (
           <p className="text-red-500 text-sm mb-4">
             Access restricted to @mdttac.com accounts
+          </p>
+        )}
+        {errorConfig && (
+          <p className="text-red-500 text-sm mb-4">
+            Google sign-in is not configured. Contact your administrator.
           </p>
         )}
         <a

@@ -10,6 +10,21 @@
     return id;
   }
 
+  function escapeHtml(s) {
+    var div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function formatAssistantText(text) {
+    if (!text) return "";
+    var out = escapeHtml(text);
+    out = out.replace(/\n/g, "<br>");
+    out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    return out;
+  }
+
   function appendMessage(role, text, isTyping) {
     var messagesEl = document.getElementById("messages");
     var div = document.createElement("div");
@@ -17,7 +32,11 @@
     div.setAttribute("data-role", role);
     var bubble = document.createElement("div");
     bubble.className = "bubble" + (isTyping ? " typing" : "");
-    bubble.textContent = text || (isTyping ? "..." : "");
+    if (role === "assistant" && !isTyping && text) {
+      bubble.innerHTML = formatAssistantText(text);
+    } else {
+      bubble.textContent = text || (isTyping ? "..." : "");
+    }
     div.appendChild(bubble);
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -83,6 +102,7 @@
       .then(function (reader) {
         var decoder = new TextDecoder();
         var buffer = "";
+        var streamedText = "";
         aiBubble.classList.add("typing");
         aiBubble.textContent = "";
 
@@ -95,7 +115,8 @@
             buffer += decoder.decode(result.value, { stream: true });
             buffer = parseStreamBuffer(buffer, function (data) {
               if (data.type === "delta" && data.text) {
-                aiBubble.textContent += data.text;
+                streamedText += data.text;
+                aiBubble.innerHTML = formatAssistantText(streamedText);
                 aiBubble.classList.remove("typing");
                 messagesEl.scrollTop = messagesEl.scrollHeight;
               } else if (data.type === "done") {
