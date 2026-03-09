@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String?
+  avatarUrl   String?
+  role        Role      @default(SUPPORT)
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+}
+
+enum Role {
+  ADMIN
+  SUPPORT
+  MARKETING
+  CONTENT_EDITOR
+}
+
+model Customer {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  shopifyId      String?   @unique
+  hubspotId      String?
+  zendeskId      String?
+  totalSpend     Float     @default(0)
+  orderCount     Int       @default(0)
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  conversations  Conversation[]
+  mergedIntoId   String?
+  mergedInto     Customer?  @relation("CustomerMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom     Customer[] @relation("CustomerMerge")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Conversation {
+  id               String              @id @default(cuid())
+  sessionId        String              @unique
+  customerId        String?
+  customer          Customer?           @relation(fields: [customerId], references: [id])
+  messages         Message[]
+  status           ConversationStatus  @default(BOT)
+  topic            String?
+  sentiment        String?
+  escalatedAt      DateTime?
+  resolvedAt       DateTime?
+  pageUrl          String?
+  zendeskTicketId  String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+}
+
+enum ConversationStatus {
+  BOT
+  ESCALATED
+  RESOLVED
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  role           MessageRole
+  content        String      @db.Text
+  createdAt      DateTime    @default(now())
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model KnowledgeSource {
+  id            String      @id @default(cuid())
+  name          String
+  type          SourceType
+  url           String?
+  maxPages      Int         @default(500)
+  lastSyncedAt  DateTime?
+  chunkCount    Int         @default(0)
+  status        SyncStatus  @default(PENDING)
+  errorMessage  String?     @db.Text
+  createdAt     DateTime    @default(now())
+  chunks        KnowledgeChunk[]
+}
+
+enum SourceType {
+  WEBSITE
+  ZENDESK
+  GOOGLE_DRIVE
+  GOOGLE_SHEETS
+  SHOPIFY
+  MANUAL
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  SYNCED
+  FAILED
+}
+
+model KnowledgeChunk {
+  id        String          @id @default(cuid())
+  sourceId  String
+  source    KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  content   String          @db.Text
+  url       String?
+  title     String?
+  createdAt DateTime        @default(now())
+}

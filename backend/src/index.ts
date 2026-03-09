@@ -3,9 +3,16 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import session from "express-session";
 import path from "path";
 import { fileURLToPath } from "url";
+import pg from "pg";
+import connectPgSimple from "connect-pg-simple";
 import { routes } from "./routes/index.js";
+import { authRouter } from "./routes/auth.js";
+import { adminRouter } from "./routes/admin.js";
+import "./lib/passport.js";
+import passport from "passport";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,10 +26,34 @@ const corsOrigins: string[] = [frontendUrl, publicUrl].filter(
 );
 
 app.use(helmet());
-app.use(cors({ origin: corsOrigins.length > 0 ? corsOrigins : true }));
+app.use(cors({ origin: corsOrigins.length > 0 ? corsOrigins : true, credentials: true }));
 app.use(morgan("combined"));
 app.use(express.json());
 
+const PgSession = connectPgSimple(session);
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+app.use(
+  session({
+    store: new PgSession({
+      pool,
+      createTableIfMissing: true,
+    }),
+    secret: process.env.SESSION_SECRET || "change-me-in-production",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 8 * 60 * 60 * 1000,
+    },
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.use("/", authRouter);
+app.use("/", adminRouter);
 app.use("/", routes);
 
 // Public home page and chat script

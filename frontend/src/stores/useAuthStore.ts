@@ -14,7 +14,7 @@ interface AuthState {
   isAuthenticated: boolean;
   init: () => Promise<void>;
   setUser: (user: User | null) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const apiUrl = import.meta.env.VITE_API_URL || "";
@@ -26,7 +26,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   init: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${apiUrl}/api/auth/me`, { credentials: "include" });
+      const res = await fetch(`${apiUrl}/auth/me`, { credentials: "include" });
       if (res.ok) {
         const user = await res.json();
         set({ user, isAuthenticated: true });
@@ -40,5 +40,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   setUser: (user) => set({ user, isAuthenticated: !!user }),
-  logout: () => set({ user: null, isAuthenticated: false }),
+  logout: async () => {
+    try {
+      await fetch(`${apiUrl}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (_) {}
+    set({ user: null, isAuthenticated: false });
+    window.location.href = "/admin/login";
+  },
 }));

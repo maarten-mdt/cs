@@ -1,4 +1,10 @@
+import { useSearchParams } from "react-router-dom";
+
 export function LoginPage() {
+  const [searchParams] = useSearchParams();
+  const errorDomain = searchParams.get("error") === "domain";
+  const apiUrl = import.meta.env.VITE_API_URL || "";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#111213]">
       <div className="w-full max-w-sm rounded-lg border border-border-dark bg-panel p-8 text-center">
@@ -6,9 +12,14 @@ export function LoginPage() {
         <p className="text-gray-400 text-sm mb-6">
           Sign in with your @mdttac.com account
         </p>
+        {errorDomain && (
+          <p className="text-red-500 text-sm mb-4">
+            Access restricted to @mdttac.com accounts
+          </p>
+        )}
         <a
-          href={`${import.meta.env.VITE_API_URL || ""}/auth/google`}
-          className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark transition-colors"
+          href={`${apiUrl}/auth/google`}
+          className="inline-flex items-center justify-center w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark transition-colors"
         >
           Sign in with Google
         </a>

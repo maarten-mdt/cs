@@ -44,18 +44,35 @@ export function AppLayout() {
             ))}
           </nav>
         </div>
-        <div className="border-t border-border-dark p-4">
+        <div className="border-t border-border-dark p-4 space-y-2">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-accent/30 flex items-center justify-center text-accent text-sm font-medium">
-              {user?.name?.[0] || user?.email?.[0] || "?"}
-            </div>
+            {user?.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt=""
+                className="h-8 w-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-accent/30 flex items-center justify-center text-accent text-sm font-medium">
+                {user?.name?.[0] || user?.email?.[0] || "?"}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-white truncate">
                 {user?.name || "User"}
               </p>
               <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+              <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+                {user?.role}
+              </span>
             </div>
           </div>
+          <button
+            onClick={() => useAuthStore.getState().logout()}
+            className="w-full text-left text-xs text-gray-400 hover:text-white"
+          >
+            Sign Out
+          </button>
         </div>
       </aside>
       <main className="flex-1 flex flex-col">
