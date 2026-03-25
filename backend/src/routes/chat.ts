@@ -54,6 +54,22 @@ const searchKnowledgeTool = {
 
 const ALL_REGIONS: StoreRegion[] = ["US", "CA", "INT"];
 
+/** Map store region to the public storefront domain customers should be linked to. */
+const STOREFRONT_DOMAIN_MAP: Record<StoreRegion, string> = {
+  US: "https://mdttac.com",
+  CA: "https://mdttac.ca",
+  INT: "https://mdttac.eu",
+};
+
+const STORE_URL_PROMPT = `
+
+--- STORE URL VARIABLE ---
+When you include links to MDT pages, always use the variable {{store_url}} as the base.
+The system will replace {{store_url}} with the correct storefront domain for this customer's region.
+Example: "Check out the [ESS Chassis]({{store_url}}/products/ess-chassis)" will become a link to the correct regional store.
+Always use {{store_url}} — never hardcode mdttac.com, mdttac.ca, or mdttac.eu directly.
+--- END STORE URL VARIABLE ---`;
+
 async function executeGetOrderInfo(
   input: { order_number?: string; email?: string; show_all?: boolean },
   storeRegion: StoreRegion,
@@ -273,6 +289,10 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     // Build system prompt with optional product context
     let systemPrompt = getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT;
+    // Replace {{store_url}} in the user-configured system prompt so admins can use the variable too
+    const storefrontDomain = STOREFRONT_DOMAIN_MAP[storeRegion] || STOREFRONT_DOMAIN_MAP.US;
+    systemPrompt = systemPrompt.replace(/\{\{store_url\}\}/g, storefrontDomain);
+    systemPrompt += STORE_URL_PROMPT;
     systemPrompt += ORDER_PRIVACY_PROMPT;
     if (shopifyCustomerId) {
       systemPrompt += `\n\n--- CUSTOMER CONTEXT ---\nThe customer is logged into their Shopify account (customer ID: ${shopifyCustomerId}). They are verified and you may look up their orders.\n--- END CUSTOMER CONTEXT ---`;
@@ -302,13 +322,39 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
         tools: toolsConfig,
       });
 
+      // Buffer text to handle {{store_url}} replacement across chunk boundaries
+      let streamBuf = "";
       stream.on("text", (delta: string) => {
-        fullText += delta;
-        res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
-        res.flushHeaders?.();
+        streamBuf += delta;
+        // If buffer might contain a partial {{...}}, hold it
+        const lastOpen = streamBuf.lastIndexOf("{{");
+        const lastClose = streamBuf.indexOf("}}", lastOpen >= 0 ? lastOpen : 0);
+        let flushUpTo: number;
+        if (lastOpen >= 0 && lastClose < 0) {
+          // Partial variable — flush everything before the {{
+          flushUpTo = lastOpen;
+        } else {
+          flushUpTo = streamBuf.length;
+        }
+        if (flushUpTo > 0) {
+          let chunk = streamBuf.slice(0, flushUpTo);
+          chunk = chunk.replace(/\{\{store_url\}\}/g, storefrontDomain);
+          fullText += chunk;
+          res.write(`data: ${JSON.stringify({ type: "delta", text: chunk })}\n\n`);
+          res.flushHeaders?.();
+          streamBuf = streamBuf.slice(flushUpTo);
+        }
       });
 
       await stream.done();
+      // Flush any remaining buffered text
+      if (streamBuf.length > 0) {
+        const remaining = streamBuf.replace(/\{\{store_url\}\}/g, storefrontDomain);
+        fullText += remaining;
+        res.write(`data: ${JSON.stringify({ type: "delta", text: remaining })}\n\n`);
+        res.flushHeaders?.();
+        streamBuf = "";
+      }
       const finalMsg = await stream.finalMessage();
       const content = (finalMsg as { content?: { type: string; id?: string; name?: string; input?: unknown }[] }).content ?? [];
       const toolUses = content.filter((b) => b.type === "tool_use");
