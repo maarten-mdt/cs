@@ -50,7 +50,11 @@ async function getOAuthToken(storeUrl: string, clientId: string, clientSecret: s
 
   const res = await fetch(`${storeUrl}/admin/oauth/access_token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "MDTSupportBot/1.0 (+https://mdttac.com)",
+      "Accept": "application/json",
+    },
     body: new URLSearchParams({
       grant_type: "client_credentials",
       client_id: clientId,
