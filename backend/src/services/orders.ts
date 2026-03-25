@@ -30,7 +30,7 @@ export interface Order {
 }
 
 async function getVariantInventoryQuantity(variantId: number, storeRegion: StoreRegion): Promise<number> {
-  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+  const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/variants/${variantId}.json?fields=inventory_quantity`,
     { headers }
@@ -89,7 +89,7 @@ function toOrderItem(
 }
 
 export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRegion = "CA"): Promise<Order | null> {
-  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+  const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   const name = orderNumber.replace(/^#/, "").trim();
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?name=${encodeURIComponent(name)}&status=any&limit=1`,
@@ -103,7 +103,7 @@ export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRe
 }
 
 export async function getOrdersByEmail(email: string, storeRegion: StoreRegion = "CA"): Promise<Order[]> {
-  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+  const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&limit=5`,
     { headers }

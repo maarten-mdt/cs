@@ -27,7 +27,7 @@ export async function fetchProduct(
   variants: { title: string; price: string; available: boolean }[];
 } | null> {
   try {
-    const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+    const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const res = await fetch(
@@ -74,7 +74,7 @@ export async function syncShopifyProducts(sourceId: string, storeRegion: StoreRe
     data: { status: SyncStatus.SYNCING, errorMessage: null },
   });
 
-  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+  const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   let url: string | null = `${storeUrl}/admin/api/${SHOPIFY_VERSION}/products.json?limit=250`;
   const items: { content: string; url: string | null; title: string }[] = [];
 

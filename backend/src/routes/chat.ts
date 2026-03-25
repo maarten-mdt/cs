@@ -202,7 +202,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     const anthropic = new Anthropic({ apiKey });
     let fullText = "";
-    const hasOrderTool = hasShopifyCredentials(storeRegion);
+    const hasOrderTool = await hasShopifyCredentials(storeRegion);
     const hasKnowledgeTool = !!process.env.OPENAI_API_KEY?.trim();
     const tools: Array<typeof getOrderInfoTool | typeof searchKnowledgeTool> = [];
     if (hasOrderTool) tools.push(getOrderInfoTool);
@@ -213,7 +213,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     // Build system prompt with optional product context
     let systemPrompt = getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT;
-    if (pageContext?.productHandle && hasShopifyCredentials(storeRegion)) {
+    if (pageContext?.productHandle && (await hasShopifyCredentials(storeRegion))) {
       try {
         const product = await fetchProduct(pageContext.productHandle, storeRegion);
         if (product) {

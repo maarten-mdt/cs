@@ -51,9 +51,9 @@ export async function identifyCustomer(
   });
 
   if (!customer) {
-    if (hasShopifyCredentials(storeRegion)) {
+    if (await hasShopifyCredentials(storeRegion)) {
       try {
-        const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+        const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
         const res = await fetch(
           `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
           { headers }
@@ -95,9 +95,9 @@ export async function identifyCustomer(
   if (providedName && !customer.name) updates.name = providedName;
 
   if (!customer.shopifyId) {
-    if (hasShopifyCredentials(storeRegion)) {
+    if (await hasShopifyCredentials(storeRegion)) {
       try {
-        const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+        const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
         const res = await fetch(
           `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
           { headers }
@@ -187,9 +187,9 @@ async function summarizeConversation(transcript: string): Promise<{
 
 /** Best-effort: set Shopify customer metafield (last_chat_summary). */
 async function syncSummaryToShopify(shopifyId: string, summary: string, storeRegion: StoreRegion = "CA"): Promise<void> {
-  if (!hasShopifyCredentials(storeRegion)) return;
+  if (!(await hasShopifyCredentials(storeRegion))) return;
   try {
-    const { storeUrl, headers } = getShopifyCredentials(storeRegion);
+    const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
     const res = await fetch(
       `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/${shopifyId}/metafields.json`,
       {

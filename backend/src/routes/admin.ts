@@ -155,7 +155,7 @@ adminRouter.get("/customers/:id", async (req, res) => {
 
     let orders: Awaited<ReturnType<typeof getOrdersByEmail>> | null = null;
     const customerRegion = (customer.storeRegion ?? "CA") as import("../lib/shopifyConfig.js").StoreRegion;
-    if (customer.email && hasShopifyCredentials(customerRegion)) {
+    if (customer.email && (await hasShopifyCredentials(customerRegion))) {
       try {
         orders = await getOrdersByEmail(customer.email, customerRegion);
       } catch {
@@ -164,9 +164,9 @@ adminRouter.get("/customers/:id", async (req, res) => {
     }
 
     let shopifyCustomerAdminUrl: string | null = null;
-    if (customer.shopifyId && hasShopifyCredentials(customerRegion)) {
+    if (customer.shopifyId && (await hasShopifyCredentials(customerRegion))) {
       try {
-        const { storeUrl } = getShopifyCredentials(customerRegion);
+        const { storeUrl } = await getShopifyCredentials(customerRegion);
         const domain = storeUrl.replace(/^https?:\/\//, "").replace(/\.myshopify\.com$/i, "");
         shopifyCustomerAdminUrl = `https://admin.shopify.com/store/${domain}/customers/${customer.shopifyId}`;
       } catch {
@@ -466,9 +466,9 @@ adminRouter.get("/analytics/summary", async (req, res) => {
 
 const CONNECTION_KEYS: Record<string, string[]> = {
   shopify: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ACCESS_TOKEN"],
-  shopify_ca: ["SHOPIFY_CA_DOMAIN", "SHOPIFY_CA_TOKEN"],
-  shopify_us: ["SHOPIFY_US_DOMAIN", "SHOPIFY_US_TOKEN"],
-  shopify_int: ["SHOPIFY_INT_DOMAIN", "SHOPIFY_INT_TOKEN"],
+  shopify_ca: ["SHOPIFY_CA_DOMAIN", "SHOPIFY_CA_CLIENT_ID", "SHOPIFY_CA_CLIENT_SECRET", "SHOPIFY_CA_TOKEN"],
+  shopify_us: ["SHOPIFY_US_DOMAIN", "SHOPIFY_US_CLIENT_ID", "SHOPIFY_US_CLIENT_SECRET", "SHOPIFY_US_TOKEN"],
+  shopify_int: ["SHOPIFY_INT_DOMAIN", "SHOPIFY_INT_CLIENT_ID", "SHOPIFY_INT_CLIENT_SECRET", "SHOPIFY_INT_TOKEN"],
   zendesk: ["ZENDESK_SUBDOMAIN", "ZENDESK_EMAIL", "ZENDESK_API_TOKEN"],
   hubspot: ["HUBSPOT_API_KEY"],
   acumatica: ["ACUMATICA_API_URL", "ACUMATICA_USERNAME", "ACUMATICA_PASSWORD"],
