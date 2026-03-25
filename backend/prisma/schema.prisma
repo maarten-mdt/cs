@@ -31,7 +31,7 @@ model Customer {
   shopifyId      String?
   hubspotId      String?
   zendeskId      String?
-  storeRegion    String    @default("CA")
+  storeRegion    String    @default("US")
   totalSpend     Float     @default(0)
   orderCount     Int       @default(0)
   firstSeenAt    DateTime  @default(now())
@@ -51,7 +51,7 @@ model Conversation {
   customer          Customer?           @relation(fields: [customerId], references: [id])
   messages         Message[]
   status           ConversationStatus  @default(BOT)
-  storeRegion      String              @default("CA")
+  storeRegion      String              @default("US")
   topic            String?
   sentiment        String?
   escalatedAt      DateTime?
