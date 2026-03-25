@@ -193,6 +193,85 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Chatbase Migration */}
+      <section className="mt-8">
+        <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3">Data Migration</h2>
+        <ChatbaseMigration />
+      </section>
+    </div>
+  );
+}
+
+function ChatbaseMigration() {
+  const [running, setRunning] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [done, setDone] = useState(false);
+
+  const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "") + "/api/admin";
+
+  const runMigration = async () => {
+    setRunning(true);
+    setLogs([]);
+    setDone(false);
+    try {
+      const res = await fetch(`${apiBase}/migrate/chatbase`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        setLogs(["Error: " + (await res.text())]);
+        setRunning(false);
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) { setRunning(false); return; }
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done: streamDone, value } = await reader.read();
+        if (streamDone) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (const part of parts) {
+          if (!part.startsWith("data:")) continue;
+          try {
+            const d = JSON.parse(part.slice(5).trim());
+            if (d.message) setLogs((prev) => [...prev, d.message]);
+            if (d.type === "done") setDone(true);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      setLogs((prev) => [...prev, `Error: ${(e as Error).message}`]);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border-dark bg-panel p-5 space-y-3">
+      <div>
+        <h3 className="text-sm font-medium text-white">Import from Chatbase</h3>
+        <p className="text-xs text-gray-400 mt-1">
+          Pulls all conversations, messages, and leads from your Chatbase account. Safe to re-run — already imported data is skipped.
+        </p>
+      </div>
+      <button
+        onClick={runMigration}
+        disabled={running}
+        className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-dark disabled:opacity-50"
+      >
+        {running ? "Migrating..." : done ? "Run Again" : "Start Migration"}
+      </button>
+      {logs.length > 0 && (
+        <div className="bg-surface rounded border border-border-dark p-3 max-h-64 overflow-y-auto">
+          {logs.map((log, i) => (
+            <div key={i} className="text-xs text-gray-300 font-mono py-0.5">{log}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
