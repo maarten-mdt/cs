@@ -154,6 +154,20 @@ function buildTranscript(messages: { role: string; content: string }[]): string 
 }
 
 /** Call Claude for summary/topic/sentiment (non-streaming, JSON). */
+/** Standard topic categories for analytics grouping. */
+const TOPIC_CATEGORIES = [
+  "Order Status & Tracking",
+  "Product Compatibility",
+  "Installation & Setup",
+  "Shipping & Delivery",
+  "Returns & Exchanges",
+  "Product Availability",
+  "Pricing & Promotions",
+  "Technical Support",
+  "Account & Login",
+  "General Inquiry",
+] as const;
+
 async function summarizeConversation(transcript: string): Promise<{
   summary?: string;
   topic?: string;
@@ -162,13 +176,25 @@ async function summarizeConversation(transcript: string): Promise<{
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return {};
   const anthropic = new Anthropic({ apiKey });
+  const topicList = TOPIC_CATEGORIES.join(", ");
   const msg = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 150,
+    max_tokens: 200,
     messages: [
       {
         role: "user",
-        content: `Summarize this support conversation in 1-2 sentences. Identify the main topic and customer sentiment. Respond only with valid JSON: { "summary": "...", "topic": "...", "sentiment": "..." }\n\n---\n\n${transcript}`,
+        content: `Analyze this support conversation. Respond only with valid JSON.
+
+1. "summary": 1-2 sentence summary
+2. "topic": Pick the BEST matching category from this list: ${topicList}. If none fit, use "General Inquiry".
+3. "sentiment": One of: "positive", "neutral", "negative", "frustrated"
+
+JSON only, no other text:
+{ "summary": "...", "topic": "...", "sentiment": "..." }
+
+---
+
+${transcript}`,
       },
     ],
   });

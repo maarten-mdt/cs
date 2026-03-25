@@ -434,9 +434,44 @@ adminRouter.get("/analytics/summary", async (req, res) => {
       where: { createdAt: { gte: since }, topic: { not: null } },
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
-      take: 5,
+      take: 10,
     });
     const topTopics = topics.map((t) => ({ topic: t.topic || "(none)", count: t._count.id }));
+
+    // Sentiment breakdown
+    const sentiments = await prisma.conversation.groupBy({
+      by: ["sentiment"],
+      where: { createdAt: { gte: since }, sentiment: { not: null } },
+      _count: { id: true },
+    });
+    const sentimentBreakdown: Record<string, number> = {};
+    for (const s of sentiments) {
+      sentimentBreakdown[s.sentiment || "unknown"] = s._count.id;
+    }
+
+    // Topic + sentiment cross-tab (which topics have negative sentiment)
+    const topicSentiment = await prisma.$queryRaw<{ topic: string; sentiment: string; count: bigint }[]>`
+      SELECT topic, sentiment, count(*)::bigint as count
+      FROM "Conversation"
+      WHERE "createdAt" >= ${since} AND topic IS NOT NULL AND sentiment IS NOT NULL
+      GROUP BY topic, sentiment
+      ORDER BY count DESC
+    `;
+    const topicSentimentMap: Record<string, Record<string, number>> = {};
+    for (const row of topicSentiment) {
+      if (!topicSentimentMap[row.topic]) topicSentimentMap[row.topic] = {};
+      topicSentimentMap[row.topic][row.sentiment] = Number(row.count);
+    }
+
+    // Feedback stats
+    const [thumbsUp, thumbsDown] = await Promise.all([
+      prisma.messageFeedback.count({
+        where: { rating: "up", createdAt: { gte: since } },
+      }),
+      prisma.messageFeedback.count({
+        where: { rating: "down", createdAt: { gte: since } },
+      }),
+    ]);
 
     const daily = await prisma.$queryRaw<{ day: string; count: bigint }[]>`
       SELECT date_trunc('day', "createdAt")::date::text as day, count(*)::bigint as count
@@ -455,6 +490,10 @@ adminRouter.get("/analytics/summary", async (req, res) => {
       avgMessages,
       topTopics,
       dailyVolume,
+      sentimentBreakdown,
+      topicSentimentMap,
+      thumbsUp,
+      thumbsDown,
     });
   } catch (e) {
     console.error(e);

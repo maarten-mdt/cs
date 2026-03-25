@@ -114,6 +114,10 @@ export interface AnalyticsSummary {
   avgMessages: number;
   topTopics: { topic: string; count: number }[];
   dailyVolume: { date: string; count: number }[];
+  sentimentBreakdown?: Record<string, number>;
+  topicSentimentMap?: Record<string, Record<string, number>>;
+  thumbsUp?: number;
+  thumbsDown?: number;
 }
 
 export interface UserListItem {
