@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      color: #2f3941;
+      padding: 8px;
+    }
+    .btn-ai {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 10px 16px;
+      background: #1f73b7;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-ai:hover { background: #144a75; }
+    .btn-ai:disabled { background: #87929d; cursor: wait; }
+    .btn-ai svg { width: 16px; height: 16px; fill: currentColor; }
+
+    .status {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #68737d;
+      text-align: center;
+      min-height: 16px;
+    }
+    .status.error { color: #cc3340; }
+
+    .actions {
+      display: none;
+      margin-top: 8px;
+      gap: 6px;
+    }
+    .actions.visible { display: flex; }
+
+    .btn-sm {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #d8dcde;
+      border-radius: 4px;
+      background: #fff;
+      color: #2f3941;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-sm:hover { background: #edf0f2; }
+    .btn-insert {
+      background: #038153;
+      color: #fff;
+      border-color: #038153;
+    }
+    .btn-insert:hover { background: #025e3c; }
+
+    .preview {
+      display: none;
+      margin-top: 8px;
+      padding: 8px;
+      background: #f8f9f9;
+      border: 1px solid #d8dcde;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .preview.visible { display: block; }
+  </style>
+</head>
+<body>
+  <button class="btn-ai" id="suggestBtn">
+    <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 1.2A5.8 5.8 0 1013.8 8 5.81 5.81 0 008 2.2zM8.9 7V4.5a.9.9 0 00-1.8 0V7H4.6a.9.9 0 000 1.8h2.5v2.5a.9.9 0 001.8 0V8.8h2.5a.9.9 0 000-1.8z"/></svg>
+    Suggest AI Reply
+  </button>
+  <div class="status" id="status"></div>
+  <div class="preview" id="preview"></div>
+  <div class="actions" id="actions">
+    <button class="btn-sm btn-insert" id="insertBtn">Insert into Reply</button>
+    <button class="btn-sm" id="copyBtn">Copy</button>
+    <button class="btn-sm" id="toggleBtn">Preview</button>
+  </div>
+
+  <script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+  <script>
+    (function() {
+      var client = ZAFClient.init();
+      var suggestedReply = "";
+
+      var suggestBtn = document.getElementById("suggestBtn");
+      var statusEl = document.getElementById("status");
+      var previewEl = document.getElementById("preview");
+      var actionsEl = document.getElementById("actions");
+      var insertBtn = document.getElementById("insertBtn");
+      var copyBtn = document.getElementById("copyBtn");
+      var toggleBtn = document.getElementById("toggleBtn");
+
+      // Resize the iframe to fit content
+      client.invoke("resize", { width: "100%", height: "200px" });
+
+      suggestBtn.addEventListener("click", function() {
+        suggestBtn.disabled = true;
+        suggestBtn.textContent = "Generating...";
+        statusEl.textContent = "";
+        statusEl.className = "status";
+        actionsEl.className = "actions";
+        previewEl.className = "preview";
+        suggestedReply = "";
+
+        // Gather ticket context
+        Promise.all([
+          client.get(["ticket.subject", "ticket.description", "ticket.id", "ticket.requester.name"])
+        ]).then(function(results) {
+          var data = results[0];
+          var ticketId = data["ticket.id"];
+          var subject = data["ticket.subject"];
+          var description = data["ticket.description"];
+          var requester = data["ticket.requester.name"];
+
+          // Get comment history
+          return client.request("/api/v2/tickets/" + ticketId + "/comments.json").then(function(resp) {
+            var comments = (resp.comments || []).map(function(c) {
+              return { body: c.body, author_id: c.author_id, "public": c["public"] };
+            });
+
+            // Find the latest customer comment
+            var publicComments = comments.filter(function(c) { return c["public"] !== false; });
+            var lastComment = publicComments.length > 0 ? publicComments[publicComments.length - 1].body : description;
+
+            // Call our backend
+            return client.request({
+              url: "{{setting.apiUrl}}/api/zendesk/suggest-reply",
+              type: "POST",
+              contentType: "application/json",
+              data: JSON.stringify({
+                subject: subject,
+                description: description,
+                requester: requester,
+                comments: comments.slice(-10),
+                latestCustomerMessage: lastComment
+              }),
+              secure: true,
+              headers: {
+                "Authorization": "Bearer {{setting.apiToken}}"
+              }
+            });
+          });
+        }).then(function(response) {
+          suggestedReply = response.suggestedReply || "";
+          if (suggestedReply) {
+            statusEl.textContent = "Reply ready — click Insert to add to your response.";
+            actionsEl.className = "actions visible";
+            previewEl.textContent = suggestedReply;
+            client.invoke("resize", { width: "100%", height: "260px" });
+          } else {
+            statusEl.textContent = "No suggestion generated.";
+          }
+        }).catch(function(err) {
+          console.error("MDT AI Reply error:", err);
+          statusEl.textContent = "Error: " + (err.responseJSON?.error || err.message || "Request failed");
+          statusEl.className = "status error";
+        }).finally(function() {
+          suggestBtn.disabled = false;
+          suggestBtn.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 1.2A5.8 5.8 0 1013.8 8 5.81 5.81 0 008 2.2zM8.9 7V4.5a.9.9 0 00-1.8 0V7H4.6a.9.9 0 000 1.8h2.5v2.5a.9.9 0 001.8 0V8.8h2.5a.9.9 0 000-1.8z"/></svg> Suggest AI Reply';
+        });
+      });
+
+      // Insert into the reply editor
+      insertBtn.addEventListener("click", function() {
+        if (suggestedReply) {
+          client.invoke("ticket.comment.appendText", suggestedReply);
+          statusEl.textContent = "Inserted into reply!";
+          statusEl.className = "status";
+        }
+      });
+
+      // Copy to clipboard
+      copyBtn.addEventListener("click", function() {
+        if (suggestedReply && navigator.clipboard) {
+          navigator.clipboard.writeText(suggestedReply).then(function() {
+            copyBtn.textContent = "Copied!";
+            setTimeout(function() { copyBtn.textContent = "Copy"; }, 1500);
+          });
+        }
+      });
+
+      // Toggle preview
+      toggleBtn.addEventListener("click", function() {
+        var showing = previewEl.className.indexOf("visible") > -1;
+        previewEl.className = showing ? "preview" : "preview visible";
+        toggleBtn.textContent = showing ? "Preview" : "Hide";
+        client.invoke("resize", { width: "100%", height: showing ? "260px" : "480px" });
+      });
+    })();
+  </script>
+</body>
+</html>

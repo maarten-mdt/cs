@@ -1,0 +1,16 @@
+{
+  "app": {
+    "name": "MDT AI Reply",
+    "short_description": "AI-powered reply suggestions for MDT support tickets",
+    "long_description": "Generates AI-suggested replies using the MDT knowledge base. Click the button to get a suggested reply, then insert it into your response.",
+    "installation_instructions": "1. Enter your Railway backend URL (e.g. https://your-app.up.railway.app)\n2. Enter the API token (set ZENDESK_APP_TOKEN in your backend config)\n3. Install and start using!"
+  },
+  "apiUrl": {
+    "label": "Backend API URL",
+    "helpText": "Your MDT Support backend URL (e.g. https://your-app.up.railway.app)"
+  },
+  "apiToken": {
+    "label": "API Token",
+    "helpText": "The shared secret token for authenticating with the backend"
+  }
+}

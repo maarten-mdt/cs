@@ -1,0 +1,37 @@
+{
+  "name": "MDT AI Reply",
+  "author": {
+    "name": "MDT Support",
+    "email": "support@mdttac.com"
+  },
+  "defaultLocale": "en",
+  "private": true,
+  "frameworkVersion": "2.0",
+  "location": {
+    "support": {
+      "ticket_sidebar": {
+        "url": "assets/iframe.html",
+        "flexible": true,
+        "size": {
+          "width": "320px",
+          "height": "200px"
+        }
+      }
+    }
+  },
+  "parameters": [
+    {
+      "name": "apiUrl",
+      "type": "text",
+      "required": true,
+      "default": "https://your-railway-app.up.railway.app"
+    },
+    {
+      "name": "apiToken",
+      "type": "text",
+      "secure": true,
+      "required": true
+    }
+  ],
+  "version": "1.0.0"
+}
