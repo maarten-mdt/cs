@@ -537,10 +537,10 @@ adminRouter.post("/connections/test", async (req, res) => {
     }
     let message: string;
     try {
-      if (integration === "shopify" || integration === "shopify_ca" || integration === "shopify_us" || integration === "shopify_int") {
-        const keys = CONNECTION_KEYS[integration];
-        const domain = getConfig(keys[0])?.trim();
-        const token = getConfig(keys[1])?.trim();
+      if (integration === "shopify") {
+        // Legacy single-store test
+        const domain = getConfig("SHOPIFY_STORE_DOMAIN")?.trim();
+        const token = getConfig("SHOPIFY_ACCESS_TOKEN")?.trim();
         if (!domain || !token) throw new Error("Store domain and access token are required");
         const url = (domain.startsWith("http") ? domain : `https://${domain}`).replace(/\/$/, "");
         const r = await fetch(`${url}/admin/api/2024-01/shop.json`, {
@@ -548,6 +548,15 @@ adminRouter.post("/connections/test", async (req, res) => {
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
         message = "Connected successfully";
+      } else if (integration === "shopify_ca" || integration === "shopify_us" || integration === "shopify_int") {
+        // Multi-store test using OAuth or static token via getShopifyCredentials
+        const regionMap: Record<string, import("../lib/shopifyConfig.js").StoreRegion> = { shopify_ca: "CA", shopify_us: "US", shopify_int: "INT" };
+        const region = regionMap[integration];
+        const creds = await getShopifyCredentials(region);
+        const r = await fetch(`${creds.storeUrl}/admin/api/2024-01/shop.json`, { headers: creds.headers });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+        const shop = (await r.json()) as { shop?: { name?: string } };
+        message = `Connected to ${shop.shop?.name || creds.storeUrl}`;
       } else if (integration === "zendesk") {
         const sub = getConfig("ZENDESK_SUBDOMAIN")?.trim();
         const email = getConfig("ZENDESK_EMAIL")?.trim();

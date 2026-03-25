@@ -7,6 +7,8 @@
  * OAuth tokens are cached in memory and refreshed when expired (24h TTL).
  */
 
+import { getConfig } from "./config.js";
+
 export type StoreRegion = "CA" | "US" | "INT";
 
 const SHOPIFY_VERSION = "2024-01";
@@ -78,13 +80,17 @@ async function getOAuthToken(storeUrl: string, clientId: string, clientSecret: s
 
 /* ── Public API ──────────────────────────────────────────────────── */
 
+function cfg(key: string): string | undefined {
+  return getConfig(key)?.trim() || undefined;
+}
+
 export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise<ShopifyCredentials> {
   const envKeys = ENV_MAP[region];
-  let domain = process.env[envKeys.domain]?.trim();
+  let domain = cfg(envKeys.domain);
 
   // CA fallback to legacy domain
   if (region === "CA" && !domain) {
-    domain = process.env.SHOPIFY_STORE_DOMAIN?.trim();
+    domain = cfg("SHOPIFY_STORE_DOMAIN");
   }
 
   if (!domain) throw new Error(`Shopify domain not configured for region ${region} (set ${envKeys.domain})`);
@@ -92,10 +98,11 @@ export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise
   const storeUrl = (domain.startsWith("http") ? domain : `https://${domain}`).replace(/\/$/, "");
 
   // Try OAuth2 client_credentials first
-  const clientId = process.env[envKeys.clientId]?.trim();
-  const clientSecret = process.env[envKeys.clientSecret]?.trim();
+  const clientId = cfg(envKeys.clientId);
+  const clientSecret = cfg(envKeys.clientSecret);
 
   if (clientId && clientSecret) {
+    console.log(`[shopify] Using OAuth2 for ${region} — domain: ${domain}, clientId: ${clientId.slice(0, 8)}...`);
     const accessToken = await getOAuthToken(storeUrl, clientId, clientSecret, region);
     return {
       storeUrl,
@@ -107,9 +114,9 @@ export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise
   }
 
   // Fall back to static token
-  let token = process.env[envKeys.token]?.trim();
+  let token = cfg(envKeys.token);
   if (region === "CA" && !token) {
-    token = process.env.SHOPIFY_ACCESS_TOKEN?.trim();
+    token = cfg("SHOPIFY_ACCESS_TOKEN");
   }
 
   if (!token) {
@@ -128,11 +135,11 @@ export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise
 /** Returns true if credentials exist for the given region (does not throw). */
 export async function hasShopifyCredentials(region: StoreRegion = "CA"): Promise<boolean> {
   const envKeys = ENV_MAP[region];
-  const domain = process.env[envKeys.domain]?.trim() || (region === "CA" ? process.env.SHOPIFY_STORE_DOMAIN?.trim() : "");
+  const domain = cfg(envKeys.domain) || (region === "CA" ? cfg("SHOPIFY_STORE_DOMAIN") : undefined);
   if (!domain) return false;
 
-  const hasOAuth = !!(process.env[envKeys.clientId]?.trim() && process.env[envKeys.clientSecret]?.trim());
-  const hasToken = !!(process.env[envKeys.token]?.trim() || (region === "CA" && process.env.SHOPIFY_ACCESS_TOKEN?.trim()));
+  const hasOAuth = !!(cfg(envKeys.clientId) && cfg(envKeys.clientSecret));
+  const hasToken = !!(cfg(envKeys.token) || (region === "CA" && cfg("SHOPIFY_ACCESS_TOKEN")));
 
   return hasOAuth || hasToken;
 }
