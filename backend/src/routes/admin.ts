@@ -474,6 +474,7 @@ const CONNECTION_KEYS: Record<string, string[]> = {
   acumatica: ["ACUMATICA_API_URL", "ACUMATICA_USERNAME", "ACUMATICA_PASSWORD"],
   anthropic: ["ANTHROPIC_API_KEY"],
   google: ["GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_DRIVE_ACCESS_TOKEN"],
+  firecrawl: ["FIRECRAWL_API_KEY"],
   widget: ["CHAT_WIDGET_ORIGIN", "WIDGET_GREETING", "WIDGET_HOSTNAME_REGION_MAP"],
 };
 
@@ -578,6 +579,16 @@ adminRouter.post("/connections/test", async (req, res) => {
           const t = await r.text();
           throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
         }
+        message = "Connected successfully";
+      } else if (integration === "firecrawl") {
+        const key = getConfig("FIRECRAWL_API_KEY")?.trim();
+        if (!key) throw new Error("API key is required");
+        const r = await fetch("https://api.firecrawl.dev/v2/search", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: "test", limit: 1 }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
         message = "Connected successfully";
       } else if (integration === "widget") {
         const origin = getConfig("CHAT_WIDGET_ORIGIN")?.trim();

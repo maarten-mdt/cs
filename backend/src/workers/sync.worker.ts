@@ -19,6 +19,7 @@ import { syncGoogleDriveFolder } from "../services/googledrive.js";
 import { syncGoogleSheets } from "../services/googlesheets.js";
 import { syncShopifyProducts } from "../services/shopify.js";
 import { syncRedditSource } from "../services/reddit.js";
+import { syncFirecrawlSource } from "../services/firecrawl.js";
 import { detectDiscrepancies } from "../services/discrepancy.js";
 import type { StoreRegion } from "../lib/shopifyConfig.js";
 import {
@@ -70,6 +71,16 @@ async function runSync(sourceId: string, type: string, storeRegion?: string): Pr
   if (t === "reddit") {
     await syncRedditSource(sourceId);
     // Run discrepancy detection after Reddit sync
+    try {
+      await detectDiscrepancies(sourceId);
+    } catch (e) {
+      console.warn("[worker] Discrepancy detection failed:", (e as Error).message);
+    }
+    return;
+  }
+  if (t === "firecrawl") {
+    await syncFirecrawlSource(sourceId);
+    // Run discrepancy detection after Firecrawl sync
     try {
       await detectDiscrepancies(sourceId);
     } catch (e) {

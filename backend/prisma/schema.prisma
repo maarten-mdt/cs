@@ -140,6 +140,7 @@ enum SourceType {
   GOOGLE_SHEETS
   SHOPIFY
   REDDIT
+  FIRECRAWL
   MANUAL
 }
 
