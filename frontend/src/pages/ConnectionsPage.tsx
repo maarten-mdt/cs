@@ -2,13 +2,17 @@ import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import { Plug, ChevronDown, ChevronUp, Check, X } from "lucide-react";
 
-const INTEGRATIONS: { id: string; name: string; description: string; keys: { key: string; label: string; secret?: boolean }[] }[] = [
-  { id: "shopify", name: "Shopify", description: "Store domain and Admin API access token", keys: [{ key: "SHOPIFY_STORE_DOMAIN", label: "Store domain" }, { key: "SHOPIFY_ACCESS_TOKEN", label: "Access token", secret: true }] },
-  { id: "zendesk", name: "Zendesk", description: "Subdomain (e.g. mdt), email, API token", keys: [{ key: "ZENDESK_SUBDOMAIN", label: "Subdomain (prefix only)" }, { key: "ZENDESK_EMAIL", label: "Email" }, { key: "ZENDESK_API_TOKEN", label: "API token", secret: true }] },
+const INTEGRATIONS: { id: string; name: string; description: string; keys: { key: string; label: string; secret?: boolean; placeholder?: string }[] }[] = [
+  { id: "shopify", name: "Shopify (Legacy/CA fallback)", description: "Default store domain and token — used as CA fallback", keys: [{ key: "SHOPIFY_STORE_DOMAIN", label: "Store domain", placeholder: "mystore.myshopify.com" }, { key: "SHOPIFY_ACCESS_TOKEN", label: "Access token", secret: true }] },
+  { id: "shopify_ca", name: "Shopify CA", description: "Canada store credentials", keys: [{ key: "SHOPIFY_CA_DOMAIN", label: "CA store domain", placeholder: "mdt-ca.myshopify.com" }, { key: "SHOPIFY_CA_TOKEN", label: "CA access token", secret: true }] },
+  { id: "shopify_us", name: "Shopify US", description: "United States store credentials", keys: [{ key: "SHOPIFY_US_DOMAIN", label: "US store domain", placeholder: "mdt-us.myshopify.com" }, { key: "SHOPIFY_US_TOKEN", label: "US access token", secret: true }] },
+  { id: "shopify_int", name: "Shopify INT", description: "International store credentials", keys: [{ key: "SHOPIFY_INT_DOMAIN", label: "INT store domain", placeholder: "mdt-int.myshopify.com" }, { key: "SHOPIFY_INT_TOKEN", label: "INT access token", secret: true }] },
+  { id: "zendesk", name: "Zendesk", description: "Subdomain (e.g. mdt), email, API token", keys: [{ key: "ZENDESK_SUBDOMAIN", label: "Subdomain (prefix only)", placeholder: "mdt" }, { key: "ZENDESK_EMAIL", label: "Email" }, { key: "ZENDESK_API_TOKEN", label: "API token", secret: true }] },
   { id: "hubspot", name: "HubSpot", description: "API key for CRM and notes", keys: [{ key: "HUBSPOT_API_KEY", label: "API key", secret: true }] },
   { id: "acumatica", name: "Acumatica", description: "API URL, username, password", keys: [{ key: "ACUMATICA_API_URL", label: "API URL" }, { key: "ACUMATICA_USERNAME", label: "Username" }, { key: "ACUMATICA_PASSWORD", label: "Password", secret: true }] },
-  { id: "anthropic", name: "Anthropic", description: "API key for Claude", keys: [{ key: "ANTHROPIC_API_KEY", label: "API key", secret: true }] },
+  { id: "anthropic", name: "Anthropic", description: "API key for Claude AI", keys: [{ key: "ANTHROPIC_API_KEY", label: "API key", secret: true }] },
   { id: "google", name: "Google Drive", description: "Service account JSON or access token", keys: [{ key: "GOOGLE_SERVICE_ACCOUNT_JSON", label: "Service account JSON (paste full JSON)" }, { key: "GOOGLE_DRIVE_ACCESS_TOKEN", label: "Or access token", secret: true }] },
+  { id: "widget", name: "Chat Widget", description: "Widget configuration for Shopify embed", keys: [{ key: "CHAT_WIDGET_ORIGIN", label: "Widget origin URL", placeholder: "https://your-app.up.railway.app" }, { key: "WIDGET_GREETING", label: "Greeting message", placeholder: "Hi! How can I help you today?" }, { key: "WIDGET_HOSTNAME_REGION_MAP", label: "Hostname → region JSON", placeholder: '{"mdttac.com":"CA","mdttac.us":"US"}' }] },
 ];
 
 export function ConnectionsPage() {
@@ -119,7 +123,7 @@ export function ConnectionsPage() {
                           value={formValues[k.key] ?? ""}
                           onChange={(e) => setFormValues((v) => ({ ...v, [k.key]: e.target.value }))}
                           className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent focus:outline-none"
-                          placeholder={k.secret ? "••••••••" : ""}
+                          placeholder={k.secret ? "••••••••" : (k.placeholder || "")}
                         />
                       </div>
                     ))}
