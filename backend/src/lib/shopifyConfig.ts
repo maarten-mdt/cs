@@ -11,7 +11,7 @@ import { getConfig } from "./config.js";
 
 export type StoreRegion = "CA" | "US" | "INT";
 
-const SHOPIFY_VERSION = "2024-01";
+const SHOPIFY_VERSION = "2025-01";
 export { SHOPIFY_VERSION };
 
 interface ShopifyCredentials {

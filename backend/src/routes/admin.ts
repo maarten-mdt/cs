@@ -543,7 +543,7 @@ adminRouter.post("/connections/test", async (req, res) => {
         const token = getConfig("SHOPIFY_ACCESS_TOKEN")?.trim();
         if (!domain || !token) throw new Error("Store domain and access token are required");
         const url = (domain.startsWith("http") ? domain : `https://${domain}`).replace(/\/$/, "");
-        const r = await fetch(`${url}/admin/api/2024-01/shop.json`, {
+        const r = await fetch(`${url}/admin/api/2025-01/shop.json`, {
           headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
@@ -553,7 +553,7 @@ adminRouter.post("/connections/test", async (req, res) => {
         const regionMap: Record<string, import("../lib/shopifyConfig.js").StoreRegion> = { shopify_ca: "CA", shopify_us: "US", shopify_int: "INT" };
         const region = regionMap[integration];
         const creds = await getShopifyCredentials(region);
-        const r = await fetch(`${creds.storeUrl}/admin/api/2024-01/shop.json`, { headers: creds.headers });
+        const r = await fetch(`${creds.storeUrl}/admin/api/2025-01/shop.json`, { headers: creds.headers });
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
         const shop = (await r.json()) as { shop?: { name?: string } };
         message = `Connected to ${shop.shop?.name || creds.storeUrl}`;
