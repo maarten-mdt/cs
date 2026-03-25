@@ -13,6 +13,7 @@ import { routes } from "./routes/index.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { chatRouter } from "./routes/chat.js";
+import { zendeskRouter } from "./routes/zendesk.js";
 import { rateLimitChat } from "./middleware/rateLimitChat.js";
 import passport from "passport";
 
@@ -39,18 +40,26 @@ const publicUrl = process.env.PUBLIC_URL;
 const corsOrigins: string[] = [frontendUrl, publicUrl].filter(
   (u): u is string => !!u
 );
+// Zendesk sidebar app requests come through Zendesk's proxy, allow them
+const zendeskOriginPattern = /\.zendesk\.com$/;
 
 app.use(helmet());
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? corsOrigins.length > 0
-          ? corsOrigins
-          : false
-        : corsOrigins.length > 0
-          ? corsOrigins
-          : true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, Zendesk proxy)
+      if (!origin) return callback(null, true);
+      // Allow configured origins
+      if (corsOrigins.includes(origin)) return callback(null, true);
+      // Allow Zendesk subdomains
+      try {
+        const host = new URL(origin).hostname;
+        if (zendeskOriginPattern.test(host)) return callback(null, true);
+      } catch {}
+      // Dev: allow all; Prod: reject unknown
+      if (process.env.NODE_ENV !== "production") return callback(null, true);
+      callback(null, corsOrigins.length > 0 ? false : true);
+    },
     credentials: true,
   })
 );
@@ -96,6 +105,7 @@ app.use(passport.session());
 app.use("/", authRouter);
 app.use("/", chatRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/zendesk", zendeskRouter);
 app.use("/", routes);
 
 // Public home page, chat script, and widget
