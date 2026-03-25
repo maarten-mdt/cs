@@ -9,7 +9,8 @@
     "worker": "tsx src/workers/sync.worker.ts",
     "worker:prod": "node dist/workers/sync.worker.js",
     "db:migrate": "node run-migrate.mjs",
-    "db:baseline": "node run-baseline.mjs"
+    "db:baseline": "node run-baseline.mjs",
+    "chatbase:migrate": "tsx src/scripts/chatbase-migrate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
