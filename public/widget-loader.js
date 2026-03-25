@@ -61,7 +61,7 @@
 
   function detectStoreRegion() {
     var host = window.location.hostname.toLowerCase();
-    return HOSTNAME_REGION_MAP[host] || "CA";
+    return HOSTNAME_REGION_MAP[host] || "US";
   }
 
   function detectPageType() {

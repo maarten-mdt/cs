@@ -17,14 +17,24 @@ export const chatRouter = Router();
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful support assistant for MDT (Modular Driven Technologies). You help customers with product questions, orders, compatibility, and installation. Be concise and friendly. Use line breaks between paragraphs and use markdown-style lists (- or 1. 2.) when listing steps or items so the reply is easy to read.`;
 
+const ORDER_PRIVACY_PROMPT = `
+
+--- ORDER LOOKUP RULES ---
+- When looking up orders, only show the most recent order first. After showing it, ask: "Would you like to see more order history?"
+- Only set show_all=true if the customer explicitly asks for more orders.
+- If no orders are found in the current store region, the tool will automatically search other regions (US, CA, INT). If still not found, ask the customer: "Which country did you place your order from? (US, Canada, or International)"
+- IMPORTANT: When showing order info, only show order status, tracking info, and items. Do NOT show the customer's full shipping address or payment details.
+--- END ORDER LOOKUP RULES ---`;
+
 const getOrderInfoTool = {
   name: "get_order_info" as const,
-  description: "Look up a customer order by order number or email. Use order_number for a specific order (e.g. #1234), or email to get the customer's last 5 orders.",
+  description: "Look up a customer order by order number or email. Use order_number for a specific order (e.g. #1234), or email to get the customer's most recent order. Set show_all=true only when the customer explicitly asks to see more order history.",
   input_schema: {
     type: "object" as const,
     properties: {
       order_number: { type: "string" as const, description: "Order number (e.g. #1234 or 1234)" },
       email: { type: "string" as const, description: "Customer email address" },
+      show_all: { type: "boolean" as const, description: "If true, return up to 5 recent orders instead of just the latest. Only set true when customer explicitly asks for more history." },
     },
     minProperties: 1,
   },
@@ -42,16 +52,65 @@ const searchKnowledgeTool = {
   },
 };
 
-async function executeGetOrderInfo(input: { order_number?: string; email?: string }, storeRegion: StoreRegion): Promise<unknown> {
+const ALL_REGIONS: StoreRegion[] = ["US", "CA", "INT"];
+
+async function executeGetOrderInfo(
+  input: { order_number?: string; email?: string; show_all?: boolean },
+  storeRegion: StoreRegion,
+  shopifyCustomerId?: string | null
+): Promise<unknown> {
   try {
+    // --- Order by number: try current region, then fallback to others ---
     if (input.order_number != null && String(input.order_number).trim()) {
-      const order = await getOrderByNumber(String(input.order_number).trim(), storeRegion);
-      if (!order) return { found: false, message: "No order found with that number." };
-      return { found: true, order };
+      const orderNum = String(input.order_number).trim();
+      // Try current region first
+      let order = await getOrderByNumber(orderNum, storeRegion).catch(() => null);
+      let foundRegion = storeRegion;
+      // Fallback: try other regions
+      if (!order) {
+        for (const region of ALL_REGIONS) {
+          if (region === storeRegion) continue;
+          if (!(await hasShopifyCredentials(region))) continue;
+          order = await getOrderByNumber(orderNum, region).catch(() => null);
+          if (order) { foundRegion = region; break; }
+        }
+      }
+      if (!order) return { found: false, message: "No order found with that number in any store region. Ask the customer which country they ordered from." };
+      return { found: true, order, storeRegion: foundRegion };
     }
+
+    // --- Orders by email ---
     if (input.email != null && String(input.email).trim()) {
-      const orders = await getOrdersByEmail(String(input.email).trim(), storeRegion);
-      return { found: orders.length > 0, orders };
+      const email = String(input.email).trim();
+      const limit = input.show_all ? 5 : 1;
+
+      // If shopifyCustomerId is set, verify the email belongs to this customer
+      // by checking the order's customer email matches
+      let orders = await getOrdersByEmail(email, storeRegion, limit).catch(() => [] as Awaited<ReturnType<typeof getOrdersByEmail>>);
+      let foundRegion = storeRegion;
+
+      // Fallback: if no orders in current region, try others
+      if (orders.length === 0) {
+        for (const region of ALL_REGIONS) {
+          if (region === storeRegion) continue;
+          if (!(await hasShopifyCredentials(region))) continue;
+          orders = await getOrdersByEmail(email, region, limit).catch(() => []);
+          if (orders.length > 0) { foundRegion = region; break; }
+        }
+      }
+
+      if (orders.length === 0) {
+        return { found: false, message: "No orders found for that email in any store region. Ask the customer which country they ordered from." };
+      }
+
+      return {
+        found: true,
+        orders,
+        storeRegion: foundRegion,
+        showing: orders.length,
+        hasMore: !input.show_all && orders.length > 0,
+        hint: !input.show_all ? "Only showing the most recent order. Ask the customer if they want to see more order history." : undefined,
+      };
     }
     return { found: false, message: "Provide either order_number or email." };
   } catch (err) {
@@ -101,7 +160,7 @@ function extractNameFromMessage(text: string): string | null {
 async function tryIdentifyAndLinkConversation(
   conversationId: string,
   messageText: string,
-  storeRegion: StoreRegion = "CA"
+  storeRegion: StoreRegion = "US"
 ): Promise<void> {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -138,8 +197,9 @@ async function tryIdentifyAndLinkConversation(
 
 // POST /api/chat/message — public, stream AI response via SSE, with optional order lookup tool
 chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
-  const { sessionId, message, pageUrl, storeRegion: rawRegion, pageContext: rawPageContext } = req.body ?? {};
-  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "CA") as StoreRegion;
+  const { sessionId, message, pageUrl, storeRegion: rawRegion, pageContext: rawPageContext, shopifyCustomerId: rawShopifyCustomerId } = req.body ?? {};
+  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "US") as StoreRegion;
+  const shopifyCustomerId: string | null = rawShopifyCustomerId && typeof rawShopifyCustomerId === "string" ? rawShopifyCustomerId.trim() : null;
   const pageContext = rawPageContext && typeof rawPageContext === "object" ? rawPageContext as {
     pageType?: string; productHandle?: string; variantId?: string; url?: string;
   } : null;
@@ -213,6 +273,12 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     // Build system prompt with optional product context
     let systemPrompt = getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT;
+    systemPrompt += ORDER_PRIVACY_PROMPT;
+    if (shopifyCustomerId) {
+      systemPrompt += `\n\n--- CUSTOMER CONTEXT ---\nThe customer is logged into their Shopify account (customer ID: ${shopifyCustomerId}). They are verified and you may look up their orders.\n--- END CUSTOMER CONTEXT ---`;
+    } else {
+      systemPrompt += `\n\n--- CUSTOMER CONTEXT ---\nThe customer is NOT logged into a Shopify account. For order lookups, only show basic order status and tracking. Do not reveal full shipping addresses or sensitive details.\n--- END CUSTOMER CONTEXT ---`;
+    }
     if (pageContext?.productHandle && (await hasShopifyCredentials(storeRegion))) {
       try {
         const product = await fetchProduct(pageContext.productHandle, storeRegion);
@@ -257,7 +323,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
         const input = (tu.input ?? {}) as Record<string, unknown>;
         const name = tu.name ?? "";
         let result: unknown;
-        if (name === "get_order_info") result = await executeGetOrderInfo(input as { order_number?: string; email?: string }, storeRegion);
+        if (name === "get_order_info") result = await executeGetOrderInfo(input as { order_number?: string; email?: string; show_all?: boolean }, storeRegion, shopifyCustomerId);
         else if (name === "search_knowledge") result = await executeSearchKnowledge(input as { query?: string });
         else result = { error: "Unknown tool" };
         toolResults.push({ type: "tool_result", tool_use_id: id, content: JSON.stringify(result) });
@@ -426,7 +492,7 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
 // POST /api/chat/identify — link conversation to customer by email (and optional name)
 chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
   const { conversationId, email, name, storeRegion: rawRegion } = req.body ?? {};
-  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "CA") as StoreRegion;
+  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "US") as StoreRegion;
   if (!conversationId || typeof conversationId !== "string" || !conversationId.trim()) {
     return res.status(400).json({ error: "conversationId is required" });
   }

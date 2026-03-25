@@ -197,7 +197,7 @@
   /* ── Parse query params ────────────────────────────────────────── */
   var params  = new URLSearchParams(window.location.search);
   var cookieId         = params.get("cookieId") || ("w_" + Math.random().toString(36).slice(2) + "_" + Date.now().toString(36));
-  var storeRegion      = params.get("storeRegion") || "CA";
+  var storeRegion      = params.get("storeRegion") || "US";
   var pageType         = params.get("pageType") || "other";
   var productHandle    = params.get("productHandle") || null;
   var variantId        = params.get("variantId") || null;
@@ -340,7 +340,8 @@
       sessionId: sessionId,
       message: text,
       storeRegion: storeRegion,
-      pageUrl: pageUrl
+      pageUrl: pageUrl,
+      shopifyCustomerId: shopifyCustomerId
     };
     if (productHandle || variantId || pageType) {
       body.pageContext = {};

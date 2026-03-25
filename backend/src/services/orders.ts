@@ -88,7 +88,7 @@ function toOrderItem(
   };
 }
 
-export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRegion = "CA"): Promise<Order | null> {
+export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRegion = "US"): Promise<Order | null> {
   const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   const name = orderNumber.replace(/^#/, "").trim();
   const res = await fetch(
@@ -102,10 +102,10 @@ export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRe
   return rawOrderToOrder(raw, storeRegion);
 }
 
-export async function getOrdersByEmail(email: string, storeRegion: StoreRegion = "CA"): Promise<Order[]> {
+export async function getOrdersByEmail(email: string, storeRegion: StoreRegion = "US", limit: number = 5): Promise<Order[]> {
   const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
   const res = await fetch(
-    `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&limit=5`,
+    `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&limit=${limit}`,
     { headers }
   );
   if (!res.ok) return [];

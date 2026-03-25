@@ -47,7 +47,7 @@ function detectStoreRegion(sourceName: string, jobRegion?: string): StoreRegion 
   const upper = sourceName.toUpperCase();
   if (upper.includes("INT")) return "INT";
   if (upper.includes("US")) return "US";
-  return "CA";
+  return "US";
 }
 
 async function runSync(sourceId: string, type: string, storeRegion?: string): Promise<void> {

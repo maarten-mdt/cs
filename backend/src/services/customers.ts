@@ -44,7 +44,7 @@ export async function identifyCustomer(
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("Email is required");
   const providedName = options?.name?.trim() || null;
-  const storeRegion: StoreRegion = options?.storeRegion ?? "CA";
+  const storeRegion: StoreRegion = options?.storeRegion ?? "US";
 
   let customer = await prisma.customer.findUnique({
     where: { email: normalized },
@@ -186,7 +186,7 @@ async function summarizeConversation(transcript: string): Promise<{
 }
 
 /** Best-effort: set Shopify customer metafield (last_chat_summary). */
-async function syncSummaryToShopify(shopifyId: string, summary: string, storeRegion: StoreRegion = "CA"): Promise<void> {
+async function syncSummaryToShopify(shopifyId: string, summary: string, storeRegion: StoreRegion = "US"): Promise<void> {
   if (!(await hasShopifyCredentials(storeRegion))) return;
   try {
     const { storeUrl, headers } = await getShopifyCredentials(storeRegion);
@@ -350,7 +350,7 @@ export async function syncConversationEnd(conversationId: string): Promise<void>
 
   const customer = conversation.customer;
   if (customer?.shopifyId) {
-    await syncSummaryToShopify(customer.shopifyId, text, (customer.storeRegion as StoreRegion) ?? "CA");
+    await syncSummaryToShopify(customer.shopifyId, text, (customer.storeRegion as StoreRegion) ?? "US");
   }
   await syncSummaryToZendesk(conversation, text);
   if (customer?.email) {

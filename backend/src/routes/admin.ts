@@ -154,7 +154,7 @@ adminRouter.get("/customers/:id", async (req, res) => {
     if (!customer) return res.status(404).json({ error: "Customer not found" });
 
     let orders: Awaited<ReturnType<typeof getOrdersByEmail>> | null = null;
-    const customerRegion = (customer.storeRegion ?? "CA") as import("../lib/shopifyConfig.js").StoreRegion;
+    const customerRegion = (customer.storeRegion ?? "US") as import("../lib/shopifyConfig.js").StoreRegion;
     if (customer.email && (await hasShopifyCredentials(customerRegion))) {
       try {
         orders = await getOrdersByEmail(customer.email, customerRegion);

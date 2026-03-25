@@ -19,7 +19,7 @@ function parseNextLink(linkHeader: string | null): string | null {
 /** Fetch a single product by handle from Shopify. Returns null if not found or credentials missing. */
 export async function fetchProduct(
   handle: string,
-  storeRegion: StoreRegion = "CA"
+  storeRegion: StoreRegion = "US"
 ): Promise<{
   title: string;
   description: string;
@@ -63,7 +63,7 @@ export async function fetchProduct(
   }
 }
 
-export async function syncShopifyProducts(sourceId: string, storeRegion: StoreRegion = "CA"): Promise<void> {
+export async function syncShopifyProducts(sourceId: string, storeRegion: StoreRegion = "US"): Promise<void> {
   const source = await prisma.knowledgeSource.findUnique({ where: { id: sourceId } });
   if (!source || source.type !== "SHOPIFY") {
     throw new Error("Source not found or not a Shopify source");

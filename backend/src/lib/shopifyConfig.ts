@@ -88,7 +88,7 @@ function cfg(key: string): string | undefined {
   return getConfig(key)?.trim() || undefined;
 }
 
-export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise<ShopifyCredentials> {
+export async function getShopifyCredentials(region: StoreRegion = "US"): Promise<ShopifyCredentials> {
   const envKeys = ENV_MAP[region];
   let domain = cfg(envKeys.domain);
 
@@ -137,7 +137,7 @@ export async function getShopifyCredentials(region: StoreRegion = "CA"): Promise
 }
 
 /** Returns true if credentials exist for the given region (does not throw). */
-export async function hasShopifyCredentials(region: StoreRegion = "CA"): Promise<boolean> {
+export async function hasShopifyCredentials(region: StoreRegion = "US"): Promise<boolean> {
   const envKeys = ENV_MAP[region];
   const domain = cfg(envKeys.domain) || (region === "CA" ? cfg("SHOPIFY_STORE_DOMAIN") : undefined);
   if (!domain) return false;
