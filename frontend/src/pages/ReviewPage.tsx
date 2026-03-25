@@ -313,6 +313,10 @@ function QATab({ onUpdate }: { onUpdate: () => void }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newQ, setNewQ] = useState("");
   const [newA, setNewA] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editQ, setEditQ] = useState("");
+  const [editA, setEditA] = useState("");
+  const [search, setSearch] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -341,6 +345,34 @@ function QATab({ onUpdate }: { onUpdate: () => void }) {
     }
   };
 
+  const saveEdit = async (id: string) => {
+    if (!editQ.trim() || !editA.trim()) return;
+    try {
+      await request(`/review/qa/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ question: editQ.trim(), answer: editA.trim() }),
+      });
+      setEditId(null);
+      onUpdate();
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  const toggleActive = async (id: string, active: boolean) => {
+    try {
+      await request(`/review/qa/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ active: !active }),
+      });
+      onUpdate();
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
   const deleteQA = async (id: string) => {
     if (!confirm("Delete this Q&A pair?")) return;
     try {
@@ -352,29 +384,54 @@ function QATab({ onUpdate }: { onUpdate: () => void }) {
     }
   };
 
+  const startEdit = (item: QAItem) => {
+    setEditId(item.id);
+    setEditQ(item.question);
+    setEditA(item.answer);
+  };
+
+  const filtered = search.trim()
+    ? items.filter(
+        (i) =>
+          i.question.toLowerCase().includes(search.toLowerCase()) ||
+          i.answer.toLowerCase().includes(search.toLowerCase())
+      )
+    : items;
+
   if (loading) return <div className="text-gray-400">Loading Q&A library...</div>;
 
   return (
     <div className="space-y-4">
-      <button
-        onClick={() => setShowAdd(!showAdd)}
-        className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent/80"
-      >
-        + Add Q&A Pair
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowAdd(!showAdd)}
+          className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent/80"
+        >
+          + Add Q&A Pair
+        </button>
+        <input
+          type="text"
+          placeholder="Search Q&A..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 max-w-xs rounded bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+        />
+        <span className="text-xs text-gray-500">{filtered.length} pair{filtered.length !== 1 ? "s" : ""}</span>
+      </div>
 
       {showAdd && (
-        <div className="rounded-lg bg-white/5 p-4 space-y-3">
+        <div className="rounded-lg bg-white/5 p-4 space-y-3 border border-accent/30">
+          <div className="text-xs text-gray-400 font-medium uppercase">New Q&A Pair</div>
           <input
             className="w-full rounded bg-white/10 border border-white/20 p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-            placeholder="Question..."
+            placeholder="Question — e.g. What chassis fits the Remington 700?"
             value={newQ}
             onChange={(e) => setNewQ(e.target.value)}
           />
           <textarea
             className="w-full rounded bg-white/10 border border-white/20 p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-            rows={3}
-            placeholder="Answer..."
+            rows={4}
+            placeholder="Answer — you can use {{store_url}} for links, e.g. Check out {{store_url}}/products/ess-chassis"
             value={newA}
             onChange={(e) => setNewA(e.target.value)}
           />
@@ -389,20 +446,79 @@ function QATab({ onUpdate }: { onUpdate: () => void }) {
         </div>
       )}
 
-      {items.length === 0 && !showAdd && (
-        <div className="text-gray-400">No curated Q&A pairs yet. Add one to improve bot answers.</div>
+      {filtered.length === 0 && !showAdd && (
+        <div className="text-gray-400">
+          {search ? "No Q&A pairs match your search." : "No curated Q&A pairs yet. Add one to improve bot answers."}
+        </div>
       )}
 
-      {items.map((item) => (
-        <div key={item.id} className="rounded-lg bg-white/5 p-4 space-y-2">
-          <div className="flex items-start justify-between">
-            <div className="text-sm font-medium text-white">Q: {item.question}</div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">{item.source} &middot; {item.addedBy || "system"}</span>
-              <button onClick={() => deleteQA(item.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+      {filtered.map((item) => (
+        <div key={item.id} className={`rounded-lg p-4 space-y-2 ${item.active ? "bg-white/5" : "bg-white/[0.02] opacity-60"}`}>
+          {editId === item.id ? (
+            /* ── Inline edit mode ── */
+            <div className="space-y-3">
+              <div className="text-xs text-accent font-medium uppercase">Editing Q&A</div>
+              <input
+                className="w-full rounded bg-white/10 border border-white/20 p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+                value={editQ}
+                onChange={(e) => setEditQ(e.target.value)}
+                placeholder="Question..."
+              />
+              <textarea
+                className="w-full rounded bg-white/10 border border-white/20 p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+                rows={4}
+                value={editA}
+                onChange={(e) => setEditA(e.target.value)}
+                placeholder="Answer — you can use {{store_url}} for links"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveEdit(item.id)}
+                  className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent/80"
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={() => setEditId(null)}
+                  className="rounded bg-white/10 px-3 py-1.5 text-sm text-gray-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="text-sm text-gray-300">A: {item.answer}</div>
+          ) : (
+            /* ── Display mode ── */
+            <>
+              <div className="flex items-start justify-between gap-4">
+                <div className="text-sm font-medium text-white flex-1">Q: {item.question}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!item.active && <span className="text-xs bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded">Disabled</span>}
+                  <span className="text-xs text-gray-500">{item.source || "manual"} &middot; {item.addedBy || "system"}</span>
+                </div>
+              </div>
+              <div className="text-sm text-gray-300 whitespace-pre-wrap">A: {item.answer}</div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => startEdit(item)}
+                  className="text-xs text-accent hover:text-accent/80"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => toggleActive(item.id, item.active)}
+                  className="text-xs text-gray-400 hover:text-white"
+                >
+                  {item.active ? "Disable" : "Enable"}
+                </button>
+                <button
+                  onClick={() => deleteQA(item.id)}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  Delete
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ))}
     </div>
