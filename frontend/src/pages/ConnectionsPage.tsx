@@ -13,7 +13,6 @@ const INTEGRATIONS: { id: string; name: string; description: string; keys: { key
   { id: "anthropic", name: "Anthropic", description: "API key for Claude AI", keys: [{ key: "ANTHROPIC_API_KEY", label: "API key", secret: true }] },
   { id: "google", name: "Google Drive", description: "Service account JSON or access token", keys: [{ key: "GOOGLE_SERVICE_ACCOUNT_JSON", label: "Service account JSON (paste full JSON)" }, { key: "GOOGLE_DRIVE_ACCESS_TOKEN", label: "Or access token", secret: true }] },
   { id: "firecrawl", name: "Firecrawl", description: "Web scraper API — searches and scrapes MDT content from Reddit, forums, blogs", keys: [{ key: "FIRECRAWL_API_KEY", label: "API key", secret: true }] },
-  { id: "widget", name: "Chat Widget", description: "Widget configuration for Shopify embed", keys: [{ key: "CHAT_WIDGET_ORIGIN", label: "Widget origin URL", placeholder: "https://your-app.up.railway.app" }, { key: "WIDGET_GREETING", label: "Greeting message", placeholder: "Hi! How can I help you today?" }, { key: "WIDGET_HOSTNAME_REGION_MAP", label: "Hostname → region JSON", placeholder: '{"mdttac.com":"CA","mdttac.us":"US"}' }] },
 ];
 
 export function ConnectionsPage() {

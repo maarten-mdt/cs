@@ -12,6 +12,7 @@ import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ReviewPage } from "./pages/ReviewPage";
+import { ChatWidgetPage } from "./pages/ChatWidgetPage";
 
 export default function App() {
   const init = useAuthStore((s) => s.init);
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
+        <Route path="chat-widget" element={<ChatWidgetPage />} />
         <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
