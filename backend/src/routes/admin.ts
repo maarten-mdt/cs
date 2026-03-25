@@ -993,3 +993,131 @@ adminRouter.delete("/users/:id", requireAuth([Role.ADMIN]), async (req, res) => 
     res.status(500).json({ error: "Failed to delete user" });
   }
 });
+
+// --- Chatbase Migration (ADMIN only) ---
+
+import { MessageRole } from "@prisma/client";
+
+adminRouter.post("/migrate/chatbase", requireAuth([Role.ADMIN]), async (_req, res) => {
+  const CHATBASE_API_KEY = getConfig("CHATBASE_API_KEY") || "4b7f6977-79ad-4629-99ca-cf6b4eb0a1e9";
+  const CHATBASE_BOT_ID = getConfig("CHATBASE_BOT_ID") || "wLjTSR6A2gMewcDWRWhlq";
+  const BASE = "https://www.chatbase.co/api/v1";
+  const cbHeaders = { Authorization: `Bearer ${CHATBASE_API_KEY}`, "Content-Type": "application/json" };
+
+  // Stream progress to client
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.flushHeaders?.();
+
+  const send = (msg: string) => { res.write(`data: ${JSON.stringify({ message: msg })}\n\n`); res.flushHeaders?.(); };
+
+  try {
+    send(`Using bot ID: ${CHATBASE_BOT_ID}`);
+
+    // Fetch all conversations
+    let page = 1;
+    const size = 50;
+    let hasMore = true;
+    interface CBConv { id: string; created_at?: string; createdAt?: string; messages?: { role: string; content: string; created_at?: string; createdAt?: string }[]; customer?: { email?: string; name?: string } }
+    const allConversations: CBConv[] = [];
+
+    while (hasMore) {
+      const cbRes = await fetch(`${BASE}/get-conversations?chatbotId=${CHATBASE_BOT_ID}&page=${page}&size=${size}`, { headers: cbHeaders });
+      if (!cbRes.ok) { send(`API error on page ${page}: ${cbRes.status}`); break; }
+      const cbData = (await cbRes.json()) as { data?: CBConv[]; conversations?: CBConv[]; pages?: number };
+      const items = cbData.data ?? cbData.conversations ?? [];
+      allConversations.push(...items);
+      send(`Fetched page ${page}: ${items.length} conversations (total: ${allConversations.length})`);
+      if (items.length < size || (cbData.pages != null && page >= cbData.pages)) hasMore = false;
+      else page++;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    send(`Total conversations fetched: ${allConversations.length}`);
+
+    // Import
+    let imported = 0, skipped = 0, errors = 0;
+    for (let i = 0; i < allConversations.length; i++) {
+      const conv = allConversations[i];
+      const sessionId = `chatbase_${conv.id}`;
+      try {
+        const existing = await prisma.conversation.findUnique({ where: { sessionId } });
+        if (existing) { skipped++; continue; }
+
+        const createdAt = conv.created_at || conv.createdAt ? new Date(conv.created_at || conv.createdAt || "") : new Date();
+        if (isNaN(createdAt.getTime())) createdAt.setTime(Date.now());
+
+        let customerId: string | null = null;
+        const email = conv.customer?.email?.trim()?.toLowerCase();
+        if (email) {
+          let customer = await prisma.customer.findUnique({ where: { email } });
+          if (!customer) {
+            customer = await prisma.customer.create({ data: { email, name: conv.customer?.name ?? null, firstSeenAt: createdAt, lastSeenAt: createdAt } });
+          }
+          customerId = customer.id;
+        }
+
+        let messages = conv.messages ?? [];
+        if (messages.length === 0) {
+          try {
+            const msgRes = await fetch(`${BASE}/get-conversations/${conv.id}/messages`, { headers: cbHeaders });
+            if (msgRes.ok) {
+              const msgData = (await msgRes.json()) as { messages?: typeof messages; data?: typeof messages };
+              messages = msgData.messages ?? msgData.data ?? [];
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (messages.length === 0) { skipped++; continue; }
+
+        const conversation = await prisma.conversation.create({
+          data: { sessionId, customerId, status: ConversationStatus.RESOLVED, storeRegion: "US", createdAt, updatedAt: createdAt },
+        });
+
+        for (const msg of messages) {
+          const role = msg.role === "assistant" || msg.role === "ai" || msg.role === "bot" ? MessageRole.ASSISTANT : msg.role === "system" ? MessageRole.SYSTEM : MessageRole.USER;
+          const msgDate = (msg.created_at || msg.createdAt) ? new Date(msg.created_at || msg.createdAt || "") : createdAt;
+          await prisma.message.create({ data: { conversationId: conversation.id, role, content: msg.content || "", createdAt: isNaN(msgDate.getTime()) ? createdAt : msgDate } });
+        }
+
+        imported++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) send(`Error on conversation ${conv.id}: ${(e as Error).message}`);
+      }
+
+      if ((i + 1) % 25 === 0) send(`Progress: ${i + 1}/${allConversations.length} (imported: ${imported}, skipped: ${skipped})`);
+      await new Promise((r) => setTimeout(r, 30));
+    }
+
+    // Fetch leads
+    send("Fetching leads...");
+    let leadsImported = 0;
+    try {
+      const leadsRes = await fetch(`${BASE}/get-leads?chatbotId=${CHATBASE_BOT_ID}`, { headers: cbHeaders });
+      if (leadsRes.ok) {
+        const leadsData = (await leadsRes.json()) as { leads?: { email?: string; name?: string; created_at?: string }[]; data?: { email?: string; name?: string; created_at?: string }[] };
+        const leads = leadsData.leads ?? leadsData.data ?? [];
+        for (const lead of leads) {
+          const email = lead.email?.trim()?.toLowerCase();
+          if (!email) continue;
+          const existing = await prisma.customer.findUnique({ where: { email } });
+          if (existing) continue;
+          const d = lead.created_at ? new Date(lead.created_at) : new Date();
+          await prisma.customer.create({ data: { email, name: lead.name ?? null, firstSeenAt: isNaN(d.getTime()) ? new Date() : d, lastSeenAt: isNaN(d.getTime()) ? new Date() : d } });
+          leadsImported++;
+        }
+        send(`Leads: ${leads.length} found, ${leadsImported} new customers created`);
+      }
+    } catch (e) {
+      send(`Leads fetch failed: ${(e as Error).message}`);
+    }
+
+    send(`\nMigration complete! Conversations: ${imported} imported, ${skipped} skipped, ${errors} errors. Leads: ${leadsImported} imported.`);
+    res.write(`data: ${JSON.stringify({ type: "done", imported, skipped, errors, leadsImported })}\n\n`);
+    res.end();
+  } catch (e) {
+    send(`Migration failed: ${(e as Error).message}`);
+    res.end();
+  }
+});
