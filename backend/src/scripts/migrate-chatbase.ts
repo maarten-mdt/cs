@@ -18,6 +18,7 @@ import { PrismaClient, MessageRole, ConversationStatus } from "@prisma/client";
 const prisma = new PrismaClient();
 
 const API_KEY = process.env.CHATBASE_API_KEY || "4b7f6977-79ad-4629-99ca-cf6b4eb0a1e9";
+const CHATBOT_ID = process.env.CHATBASE_BOT_ID || "wLjTSR6A2gMewcDWRWhlq";
 const BASE_URL = "https://www.chatbase.co/api/v1";
 
 const headers = {
@@ -260,14 +261,20 @@ async function main() {
   console.log("=== Chatbase → MDT Chat Migration ===\n");
 
   // Step 1: Get chatbots
-  console.log("1. Fetching chatbot list...");
-  const bots = await getChatbots();
-  if (bots.length === 0) {
-    console.log("   No chatbots found. Trying with direct conversation fetch...");
-    // Try fetching conversations without a specific bot ID
-    bots.push({ id: "", name: "Default" });
+  console.log("1. Resolving chatbot...");
+  const bots: { id: string; name: string }[] = [];
+  if (CHATBOT_ID) {
+    bots.push({ id: CHATBOT_ID, name: "MDT Support" });
+    console.log(`   Using configured bot ID: ${CHATBOT_ID}`);
   } else {
-    console.log(`   Found ${bots.length} chatbot(s): ${bots.map((b) => `${b.name} (${b.id})`).join(", ")}`);
+    const fetched = await getChatbots();
+    if (fetched.length === 0) {
+      console.log("   No chatbots found. Trying with direct conversation fetch...");
+      bots.push({ id: "", name: "Default" });
+    } else {
+      bots.push(...fetched);
+      console.log(`   Found ${fetched.length} chatbot(s): ${fetched.map((b) => `${b.name} (${b.id})`).join(", ")}`);
+    }
   }
 
   let totalConversations = 0;
