@@ -5,22 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../lib/prisma.js";
 import type { Customer, Conversation } from "@prisma/client";
-
-const SHOPIFY_VERSION = "2024-01";
-
-function getShopifyConfig(): { storeUrl: string; headers: HeadersInit } | null {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN?.trim();
-  const token = process.env.SHOPIFY_ACCESS_TOKEN?.trim();
-  if (!domain || !token) return null;
-  const storeUrl = domain.startsWith("http") ? domain : `https://${domain}`;
-  return {
-    storeUrl: storeUrl.replace(/\/$/, ""),
-    headers: {
-      "X-Shopify-Access-Token": token,
-      "Content-Type": "application/json",
-    },
-  };
-}
+import { getShopifyCredentials, hasShopifyCredentials, SHOPIFY_VERSION, type StoreRegion } from "../lib/shopifyConfig.js";
 
 function getZendeskConfig(): { subdomain: string; auth: string } | null {
   const sub = process.env.ZENDESK_SUBDOMAIN?.trim();
@@ -54,23 +39,24 @@ async function findZendeskUserByEmail(email: string): Promise<string | null> {
 /** Find or create Customer by email; optionally set name; enrich with Shopify/Zendesk; update lastSeenAt. */
 export async function identifyCustomer(
   email: string,
-  options?: { name?: string }
+  options?: { name?: string; storeRegion?: StoreRegion }
 ): Promise<Customer> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("Email is required");
   const providedName = options?.name?.trim() || null;
+  const storeRegion: StoreRegion = options?.storeRegion ?? "CA";
 
   let customer = await prisma.customer.findUnique({
     where: { email: normalized },
   });
 
   if (!customer) {
-    const shopify = getShopifyConfig();
-    if (shopify) {
+    if (hasShopifyCredentials(storeRegion)) {
       try {
+        const { storeUrl, headers } = getShopifyCredentials(storeRegion);
         const res = await fetch(
-          `${shopify.storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
-          { headers: shopify.headers }
+          `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
+          { headers }
         );
         if (res.ok) {
           const data = (await res.json()) as {
@@ -84,6 +70,7 @@ export async function identifyCustomer(
                 email: (c.email ?? normalized).toLowerCase(),
                 name,
                 shopifyId: String(c.id),
+                storeRegion,
                 totalSpend: parseFloat(c.total_spent ?? "0") || 0,
                 orderCount: c.orders_count ?? 0,
               },
@@ -96,24 +83,24 @@ export async function identifyCustomer(
     }
     if (!customer) {
       customer = await prisma.customer.create({
-        data: { email: normalized, name: providedName },
+        data: { email: normalized, name: providedName, storeRegion },
       });
     }
   }
 
-  const updates: { lastSeenAt: Date; name?: string; shopifyId?: string; totalSpend?: number; orderCount?: number; zendeskId?: string } = {
+  const updates: { lastSeenAt: Date; name?: string; shopifyId?: string; storeRegion?: string; totalSpend?: number; orderCount?: number; zendeskId?: string } = {
     lastSeenAt: new Date(),
   };
 
   if (providedName && !customer.name) updates.name = providedName;
 
   if (!customer.shopifyId) {
-    const shopify = getShopifyConfig();
-    if (shopify) {
+    if (hasShopifyCredentials(storeRegion)) {
       try {
+        const { storeUrl, headers } = getShopifyCredentials(storeRegion);
         const res = await fetch(
-          `${shopify.storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
-          { headers: shopify.headers }
+          `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/search.json?query=${encodeURIComponent(`email:${normalized}`)}&limit=1`,
+          { headers }
         );
         if (res.ok) {
           const data = (await res.json()) as {
@@ -122,6 +109,7 @@ export async function identifyCustomer(
           const c = data.customers?.[0];
           if (c) {
             updates.shopifyId = String(c.id);
+            updates.storeRegion = storeRegion;
             updates.totalSpend = parseFloat(c.total_spent ?? "0") || 0;
             updates.orderCount = c.orders_count ?? 0;
             if (!customer.name) {
@@ -198,15 +186,15 @@ async function summarizeConversation(transcript: string): Promise<{
 }
 
 /** Best-effort: set Shopify customer metafield (last_chat_summary). */
-async function syncSummaryToShopify(shopifyId: string, summary: string): Promise<void> {
-  const shopify = getShopifyConfig();
-  if (!shopify) return;
+async function syncSummaryToShopify(shopifyId: string, summary: string, storeRegion: StoreRegion = "CA"): Promise<void> {
+  if (!hasShopifyCredentials(storeRegion)) return;
   try {
+    const { storeUrl, headers } = getShopifyCredentials(storeRegion);
     const res = await fetch(
-      `${shopify.storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/${shopifyId}/metafields.json`,
+      `${storeUrl}/admin/api/${SHOPIFY_VERSION}/customers/${shopifyId}/metafields.json`,
       {
         method: "POST",
-        headers: shopify.headers,
+        headers,
         body: JSON.stringify({
           metafield: {
             namespace: "mdt_support",
@@ -362,7 +350,7 @@ export async function syncConversationEnd(conversationId: string): Promise<void>
 
   const customer = conversation.customer;
   if (customer?.shopifyId) {
-    await syncSummaryToShopify(customer.shopifyId, text);
+    await syncSummaryToShopify(customer.shopifyId, text, (customer.storeRegion as StoreRegion) ?? "CA");
   }
   await syncSummaryToZendesk(conversation, text);
   if (customer?.email) {

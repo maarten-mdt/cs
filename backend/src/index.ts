@@ -98,9 +98,14 @@ app.use("/", chatRouter);
 app.use("/api/admin", adminRouter);
 app.use("/", routes);
 
-// Public home page and chat script
+// Public home page, chat script, and widget
 const publicPath = path.join(__dirname, "../../public");
 app.use(express.static(publicPath));
+
+// Serve widget chat UI at /widget (without .html extension)
+app.get("/widget", (_req, res) => {
+  res.sendFile(path.join(publicPath, "widget.html"));
+});
 
 // Admin dashboard (frontend build)
 const adminPath = path.join(__dirname, "../../frontend/dist");

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MDT Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --green: #6b8f24;
+      --green-light: #f0f4e8;
+      --green-mid: #d4e4a0;
+      --bg: #fafafa;
+      --white: #ffffff;
+      --border: #e2e2e2;
+      --text: #1a1a1a;
+      --text-mid: #4a4a4a;
+      --text-soft: #888;
+      --font: 'Barlow', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    html, body {
+      height: 100%;
+      background: var(--white);
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--text);
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      background: var(--green);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .header-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255,255,255,0.5);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .header-name { font-size: 13px; font-weight: 600; color: white; }
+    .header-status { margin-left: auto; font-size: 11px; color: rgba(255,255,255,0.7); }
+
+    /* Messages */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--bg);
+      scrollbar-width: thin;
+      scrollbar-color: #ddd transparent;
+    }
+    .msg { max-width: 88%; display: flex; gap: 8px; align-items: flex-start; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg.bot { align-self: flex-start; }
+    .msg-av {
+      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 600;
+    }
+    .msg.bot .msg-av { background: var(--green-light); border: 1px solid var(--green-mid); color: var(--green); }
+    .msg.user .msg-av { background: #ececec; border: 1px solid #d8d8d8; color: #666; }
+    .msg-bub {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-mid);
+      word-break: break-word;
+    }
+    .msg-bub ul, .msg-bub ol { margin: 0.4em 0; padding-left: 1.3em; }
+    .msg-bub li { margin: 0.2em 0; }
+    .msg-bub strong { font-weight: 600; }
+    .msg-bub code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+    .msg.user .msg-bub { background: var(--green-light); border-color: var(--green-mid); color: var(--text); }
+    .typing span {
+      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: #bbb; animation: dot 1.2s ease-in-out infinite; margin: 0 1px;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot { 0%,60%,100%{opacity:0.3;transform:translateY(0)} 30%{opacity:1;transform:translateY(-3px)} }
+
+    /* Chips */
+    .chips {
+      padding: 8px 12px;
+      display: flex; gap: 6px; flex-wrap: wrap;
+      background: var(--bg);
+    }
+    .chip {
+      font-family: var(--font);
+      font-size: 11px; font-weight: 500;
+      color: var(--green);
+      background: var(--green-light);
+      border: 1px solid var(--green-mid);
+      border-radius: 16px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .chip:hover { background: var(--green-mid); }
+
+    /* Feedback thumbs */
+    .msg-feedback {
+      display: flex; gap: 4px; margin-top: 4px; padding-left: 34px;
+    }
+    .msg-feedback button {
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      padding: 2px 6px; cursor: pointer; font-size: 12px; color: var(--text-soft);
+      transition: all 0.15s;
+    }
+    .msg-feedback button:hover { border-color: var(--green); color: var(--green); }
+    .msg-feedback button.selected-up { background: #e8f5e9; border-color: #4caf50; color: #4caf50; }
+    .msg-feedback button.selected-down { background: #fce4ec; border-color: #e53935; color: #e53935; }
+
+    /* Input */
+    .input-row {
+      display: flex;
+      border-top: 1px solid var(--border);
+      background: var(--white);
+      flex-shrink: 0;
+    }
+    .input-row input {
+      flex: 1; border: none; outline: none;
+      padding: 12px 14px;
+      font-family: var(--font); font-size: 13px;
+      color: var(--text); background: transparent;
+    }
+    .input-row input::placeholder { color: #bbb; }
+    .input-row button {
+      background: var(--green); border: none; width: 44px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: white;
+    }
+    .input-row button:hover { background: #5a7a1c; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 6px;
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .footer a {
+      font-size: 11px; color: var(--text-soft); text-decoration: none;
+    }
+    .footer a:hover { color: var(--green); text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-dot"></div>
+  <span class="header-name">MDT Support</span>
+  <span class="header-status">Online</span>
+</div>
+
+<div class="messages" id="messages">
+  <div class="msg bot">
+    <div class="msg-av">AI</div>
+    <div class="msg-bub" id="greeting">Hi! How can I help you today?</div>
+  </div>
+</div>
+
+<div class="chips" id="chip-row"></div>
+
+<form class="input-row" id="chat-form">
+  <input id="chat-input" type="text" placeholder="Type your question…" autocomplete="off" />
+  <button type="submit">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="currentColor"/>
+    </svg>
+  </button>
+</form>
+
+<div class="footer">
+  <a href="#" id="talk-to-human">Talk to a human</a>
+</div>
+
+<script>
+(function () {
+  /* ── Parse query params ────────────────────────────────────────── */
+  var params  = new URLSearchParams(window.location.search);
+  var cookieId         = params.get("cookieId") || ("w_" + Math.random().toString(36).slice(2) + "_" + Date.now().toString(36));
+  var storeRegion      = params.get("storeRegion") || "CA";
+  var pageType         = params.get("pageType") || "other";
+  var productHandle    = params.get("productHandle") || null;
+  var variantId        = params.get("variantId") || null;
+  var shopifyCustomerId = params.get("shopifyCustomerId") || null;
+  var pageUrl          = params.get("url") || "";
+
+  var sessionId = cookieId; // Use cookieId as sessionId for continuity
+  var conversationId = null;
+
+  var msgsEl  = document.getElementById("messages");
+  var inputEl = document.getElementById("chat-input");
+  var formEl  = document.getElementById("chat-form");
+  var chipRow = document.getElementById("chip-row");
+
+  /* ── Helpers ────────────────────────────────────────────────────── */
+
+  function scrollDown() { msgsEl.scrollTop = msgsEl.scrollHeight; }
+
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function formatText(text) {
+    if (!text) return "";
+    var escaped = escapeHtml(text);
+    var lines = escaped.split(/\r?\n/);
+    var html = [], inUl = false, inOl = false;
+    function closeLists() {
+      if (inUl) { html.push("</ul>"); inUl = false; }
+      if (inOl) { html.push("</ol>"); inOl = false; }
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var ulMatch = /^\s*[-*]\s+(.+)$/.exec(line);
+      var olMatch = /^\s*\d+\.\s+(.+)$/.exec(line);
+      if (ulMatch) {
+        if (inOl) { html.push("</ol>"); inOl = false; }
+        if (!inUl) { html.push("<ul>"); inUl = true; }
+        html.push("<li>" + ulMatch[1] + "</li>");
+      } else if (olMatch) {
+        if (inUl) { html.push("</ul>"); inUl = false; }
+        if (!inOl) { html.push("<ol>"); inOl = true; }
+        html.push("<li>" + olMatch[1] + "</li>");
+      } else {
+        closeLists();
+        if (line.length > 0) html.push(line);
+        if (i < lines.length - 1) html.push("<br>");
+      }
+    }
+    closeLists();
+    var out = html.join("");
+    out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    return out;
+  }
+
+  function addMsg(role, html) {
+    var d = document.createElement("div");
+    d.className = "msg " + role;
+    var av = role === "bot" ? "AI" : "YOU";
+    d.innerHTML = '<div class="msg-av">' + av + '</div><div class="msg-bub">' + html + '</div>';
+    msgsEl.appendChild(d);
+    scrollDown();
+    return d;
+  }
+
+  function addFeedbackButtons(msgDiv, messageId) {
+    if (!messageId) return;
+    var fb = document.createElement("div");
+    fb.className = "msg-feedback";
+    fb.innerHTML = '<button data-rating="up" title="Helpful">\u{1F44D}</button><button data-rating="down" title="Not helpful">\u{1F44E}</button>';
+    msgDiv.appendChild(fb);
+    fb.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var rating = btn.getAttribute("data-rating");
+        fb.querySelectorAll("button").forEach(function (b) {
+          b.className = "";
+          b.disabled = true;
+        });
+        btn.className = "selected-" + rating;
+        fetch("/api/chat/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId: messageId, rating: rating })
+        }).catch(function () {});
+      });
+    });
+    scrollDown();
+  }
+
+  function addTyping() {
+    var d = document.createElement("div");
+    d.className = "msg bot"; d.id = "typing";
+    d.innerHTML = '<div class="msg-av">AI</div><div class="msg-bub"><div class="typing"><span></span><span></span><span></span></div></div>';
+    msgsEl.appendChild(d); scrollDown();
+    return d;
+  }
+
+  /* ── Load config (greeting + chips) ──────────────────────────── */
+
+  fetch("/api/widget/config")
+    .then(function (r) { return r.json(); })
+    .then(function (cfg) {
+      if (cfg.greeting) {
+        document.getElementById("greeting").textContent = cfg.greeting;
+      }
+      var qs = cfg.suggestedQuestions || ["Where is my order?", "Product compatibility", "Installation help"];
+      chipRow.innerHTML = "";
+      qs.forEach(function (q) {
+        var btn = document.createElement("button");
+        btn.className = "chip";
+        btn.textContent = q;
+        btn.addEventListener("click", function () { sendChat(q); });
+        chipRow.appendChild(btn);
+      });
+    })
+    .catch(function () {
+      ["Where is my order?", "Product compatibility", "Installation help"].forEach(function (q) {
+        var btn = document.createElement("button");
+        btn.className = "chip";
+        btn.textContent = q;
+        btn.addEventListener("click", function () { sendChat(q); });
+        chipRow.appendChild(btn);
+      });
+    });
+
+  /* ── Send message ──────────────────────────────────────────────── */
+
+  function sendChat(text) {
+    text = (text || "").trim();
+    if (!text) return;
+    inputEl.value = "";
+    chipRow.style.display = "none";
+    addMsg("user", escapeHtml(text));
+    var t = addTyping();
+
+    var body = {
+      sessionId: sessionId,
+      message: text,
+      storeRegion: storeRegion,
+      pageUrl: pageUrl
+    };
+    if (productHandle || variantId || pageType) {
+      body.pageContext = {};
+      if (pageType) body.pageContext.pageType = pageType;
+      if (productHandle) body.pageContext.productHandle = productHandle;
+      if (variantId) body.pageContext.variantId = variantId;
+      if (pageUrl) body.pageContext.url = pageUrl;
+    }
+
+    fetch("/api/chat/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      t.remove();
+      if (!res.ok) { addMsg("bot", "Something went wrong. Please try again."); return; }
+      var msgDiv = addMsg("bot", "");
+      var bubble = msgDiv.querySelector(".msg-bub");
+      var reader = res.body.getReader();
+      var dec = new TextDecoder();
+      var buf = "", full = "";
+
+      function read() {
+        reader.read().then(function (result) {
+          if (result.done) return;
+          buf += dec.decode(result.value, { stream: true });
+          var parts = buf.split("\n\n");
+          buf = parts.pop();
+          for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (!p.startsWith("data:")) continue;
+            try {
+              var d = JSON.parse(p.slice(5).trim());
+              if (d.type === "delta") {
+                full += d.text;
+                bubble.innerHTML = formatText(full);
+                scrollDown();
+              } else if (d.type === "done") {
+                if (d.conversationId) conversationId = d.conversationId;
+                if (d.messageId) addFeedbackButtons(msgDiv, d.messageId);
+              }
+            } catch (e) {}
+          }
+          read();
+        }).catch(function () {});
+      }
+      read();
+    }).catch(function () {
+      t.remove();
+      addMsg("bot", "Connection error. Please try again.");
+    });
+  }
+
+  /* ── Form submit ───────────────────────────────────────────────── */
+
+  formEl.addEventListener("submit", function (e) {
+    e.preventDefault();
+    sendChat(inputEl.value);
+  });
+
+  /* ── Escalate ──────────────────────────────────────────────────── */
+
+  document.getElementById("talk-to-human").addEventListener("click", function (e) {
+    e.preventDefault();
+    if (!conversationId) {
+      addMsg("bot", "Please send a message first so we can connect you.");
+      return;
+    }
+    fetch("/api/chat/escalate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: conversationId })
+    }).then(function (r) { return r.json(); })
+      .then(function (data) {
+        var msg = data.message || (data.ticketUrl ? "Ticket created. We\u2019ll be in touch." : "We\u2019ll be in touch.");
+        addMsg("bot", escapeHtml(msg));
+      })
+      .catch(function () {
+        addMsg("bot", "Could not submit. Please try again or email support@mdttac.com.");
+      });
+  });
+})();
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import { enqueueSyncSource } from "../lib/queue.js";
 import { getConfig, saveConfig, getConfigFromDb } from "../lib/config.js";
 import { SourceType, ConversationStatus, type Prisma, Role } from "@prisma/client";
 import { getOrdersByEmail } from "../services/orders.js";
+import { getShopifyCredentials, hasShopifyCredentials } from "../lib/shopifyConfig.js";
 
 export const adminRouter = Router();
 
@@ -153,18 +154,24 @@ adminRouter.get("/customers/:id", async (req, res) => {
     if (!customer) return res.status(404).json({ error: "Customer not found" });
 
     let orders: Awaited<ReturnType<typeof getOrdersByEmail>> | null = null;
-    if (customer.email && process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ACCESS_TOKEN) {
+    const customerRegion = (customer.storeRegion ?? "CA") as import("../lib/shopifyConfig.js").StoreRegion;
+    if (customer.email && hasShopifyCredentials(customerRegion)) {
       try {
-        orders = await getOrdersByEmail(customer.email);
+        orders = await getOrdersByEmail(customer.email, customerRegion);
       } catch {
         orders = [];
       }
     }
 
     let shopifyCustomerAdminUrl: string | null = null;
-    if (customer.shopifyId && process.env.SHOPIFY_STORE_DOMAIN) {
-      const domain = process.env.SHOPIFY_STORE_DOMAIN.trim().replace(/\.myshopify\.com$/i, "");
-      shopifyCustomerAdminUrl = `https://admin.shopify.com/store/${domain}/customers/${customer.shopifyId}`;
+    if (customer.shopifyId && hasShopifyCredentials(customerRegion)) {
+      try {
+        const { storeUrl } = getShopifyCredentials(customerRegion);
+        const domain = storeUrl.replace(/^https?:\/\//, "").replace(/\.myshopify\.com$/i, "");
+        shopifyCustomerAdminUrl = `https://admin.shopify.com/store/${domain}/customers/${customer.shopifyId}`;
+      } catch {
+        // credentials not configured for this region
+      }
     }
 
     res.json({
@@ -459,14 +466,24 @@ adminRouter.get("/analytics/summary", async (req, res) => {
 
 const CONNECTION_KEYS: Record<string, string[]> = {
   shopify: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ACCESS_TOKEN"],
+  shopify_ca: ["SHOPIFY_CA_DOMAIN", "SHOPIFY_CA_TOKEN"],
+  shopify_us: ["SHOPIFY_US_DOMAIN", "SHOPIFY_US_TOKEN"],
+  shopify_int: ["SHOPIFY_INT_DOMAIN", "SHOPIFY_INT_TOKEN"],
   zendesk: ["ZENDESK_SUBDOMAIN", "ZENDESK_EMAIL", "ZENDESK_API_TOKEN"],
   hubspot: ["HUBSPOT_API_KEY"],
   acumatica: ["ACUMATICA_API_URL", "ACUMATICA_USERNAME", "ACUMATICA_PASSWORD"],
   anthropic: ["ANTHROPIC_API_KEY"],
   google: ["GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_DRIVE_ACCESS_TOKEN"],
+  widget: ["CHAT_WIDGET_ORIGIN", "WIDGET_GREETING", "WIDGET_HOSTNAME_REGION_MAP"],
 };
 
-function mask(s: string): string {
+const NO_MASK_KEYS = new Set([
+  "CHAT_WIDGET_ORIGIN", "WIDGET_GREETING", "WIDGET_HOSTNAME_REGION_MAP",
+  "ZENDESK_SUBDOMAIN", "ZENDESK_EMAIL", "ACUMATICA_API_URL",
+]);
+
+function mask(s: string, key?: string): string {
+  if (key && NO_MASK_KEYS.has(key)) return s;
   if (!s || s.length < 8) return "••••";
   return s.slice(0, 4) + "••••" + s.slice(-2);
 }
@@ -478,7 +495,7 @@ adminRouter.get("/connections", async (_req, res) => {
       const values: Record<string, string> = {};
       for (const key of keys) {
         const v = getConfig(key);
-        values[key] = v && v.trim() ? mask(v) : "";
+        values[key] = v && v.trim() ? mask(v, key) : "";
       }
       integrations[name] = { configured: keys.every((k) => getConfig(k)?.trim()), keys: values };
     }
@@ -519,9 +536,10 @@ adminRouter.post("/connections/test", async (req, res) => {
     }
     let message: string;
     try {
-      if (integration === "shopify") {
-        const domain = getConfig("SHOPIFY_STORE_DOMAIN")?.trim();
-        const token = getConfig("SHOPIFY_ACCESS_TOKEN")?.trim();
+      if (integration === "shopify" || integration === "shopify_ca" || integration === "shopify_us" || integration === "shopify_int") {
+        const keys = CONNECTION_KEYS[integration];
+        const domain = getConfig(keys[0])?.trim();
+        const token = getConfig(keys[1])?.trim();
         if (!domain || !token) throw new Error("Store domain and access token are required");
         const url = (domain.startsWith("http") ? domain : `https://${domain}`).replace(/\/$/, "");
         const r = await fetch(`${url}/admin/api/2024-01/shop.json`, {
@@ -561,6 +579,10 @@ adminRouter.post("/connections/test", async (req, res) => {
           throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
         }
         message = "Connected successfully";
+      } else if (integration === "widget") {
+        const origin = getConfig("CHAT_WIDGET_ORIGIN")?.trim();
+        if (!origin) throw new Error("CHAT_WIDGET_ORIGIN is required");
+        message = "Widget configured — origin: " + origin;
       } else if (integration === "acumatica" || integration === "google") {
         message = "Test not implemented for this integration";
       } else {
@@ -576,6 +598,272 @@ adminRouter.post("/connections/test", async (req, res) => {
     res.status(500).json({ error: "Failed to test connection" });
   }
 });
+
+// --- Review (Daily improvement) ---
+
+// GET /review/feedback — thumbs-down messages with conversation context
+adminRouter.get("/review/feedback", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const ratingFilter = req.query.rating as string || "down";
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.messageFeedback.findMany({
+        where: { rating: ratingFilter },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+        include: {
+          message: {
+            include: {
+              conversation: {
+                include: {
+                  customer: { select: { id: true, email: true, name: true } },
+                  messages: { orderBy: { createdAt: "asc" }, take: 20 },
+                },
+              },
+            },
+          },
+        },
+      }),
+      prisma.messageFeedback.count({ where: { rating: ratingFilter } }),
+    ]);
+
+    // For each feedback item, find the user question that preceded the bot response
+    const result = items.map((fb) => {
+      const msgs = fb.message.conversation.messages;
+      const botIdx = msgs.findIndex((m) => m.id === fb.messageId);
+      const userMsg = botIdx > 0 ? msgs[botIdx - 1] : null;
+      return {
+        id: fb.id,
+        rating: fb.rating,
+        comment: fb.comment,
+        createdAt: fb.createdAt,
+        messageId: fb.messageId,
+        botResponse: fb.message.content,
+        userQuestion: userMsg?.role === "USER" ? userMsg.content : null,
+        conversationId: fb.message.conversationId,
+        customer: fb.message.conversation.customer,
+      };
+    });
+
+    res.json({ items: result, total, page, limit });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load feedback" });
+  }
+});
+
+// GET /review/discrepancies — open discrepancies with AI suggestions
+adminRouter.get("/review/discrepancies", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || "open";
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.discrepancy.findMany({
+        where: { status },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.discrepancy.count({ where: { status } }),
+    ]);
+
+    res.json({ items, total, page, limit });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load discrepancies" });
+  }
+});
+
+// PUT /review/discrepancies/:id — resolve or dismiss
+adminRouter.put("/review/discrepancies/:id", async (req, res) => {
+  try {
+    const { status, resolution } = req.body as { status?: string; resolution?: string };
+    if (!status || !["resolved", "dismissed"].includes(status)) {
+      return res.status(400).json({ error: "status must be 'resolved' or 'dismissed'" });
+    }
+    const user = req.user as { email?: string } | undefined;
+    const updated = await prisma.discrepancy.update({
+      where: { id: req.params.id },
+      data: {
+        status,
+        resolution: resolution?.trim() || null,
+        resolvedBy: user?.email || null,
+      },
+    });
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to update discrepancy" });
+  }
+});
+
+// GET /review/qa — list curated Q&A pairs
+adminRouter.get("/review/qa", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.curatedQA.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.curatedQA.count(),
+    ]);
+
+    res.json({ items, total, page, limit });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load Q&A" });
+  }
+});
+
+// POST /review/qa — add curated Q&A pair
+adminRouter.post("/review/qa", async (req, res) => {
+  try {
+    const { question, answer, source } = req.body as { question?: string; answer?: string; source?: string };
+    if (!question?.trim() || !answer?.trim()) {
+      return res.status(400).json({ error: "question and answer are required" });
+    }
+    const user = req.user as { email?: string } | undefined;
+    const qa = await prisma.curatedQA.create({
+      data: {
+        question: question.trim(),
+        answer: answer.trim(),
+        source: source?.trim() || "admin_review",
+        addedBy: user?.email || null,
+      },
+    });
+    // Embed into knowledge base
+    await embedCuratedQA(qa.id, qa.question, qa.answer);
+    res.json(qa);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to create Q&A" });
+  }
+});
+
+// PUT /review/qa/:id — edit curated Q&A
+adminRouter.put("/review/qa/:id", async (req, res) => {
+  try {
+    const { question, answer, active } = req.body as { question?: string; answer?: string; active?: boolean };
+    const data: Record<string, unknown> = {};
+    if (question?.trim()) data.question = question.trim();
+    if (answer?.trim()) data.answer = answer.trim();
+    if (typeof active === "boolean") data.active = active;
+    const qa = await prisma.curatedQA.update({ where: { id: req.params.id }, data });
+    // Re-embed if content changed
+    if (question || answer) {
+      await embedCuratedQA(qa.id, qa.question, qa.answer);
+    }
+    res.json(qa);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to update Q&A" });
+  }
+});
+
+// DELETE /review/qa/:id
+adminRouter.delete("/review/qa/:id", async (req, res) => {
+  try {
+    await prisma.curatedQA.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to delete Q&A" });
+  }
+});
+
+// POST /review/correct — correct a bad bot response (creates CuratedQA from it)
+adminRouter.post("/review/correct", async (req, res) => {
+  try {
+    const { messageId, correctedAnswer, question } = req.body as {
+      messageId?: string;
+      correctedAnswer?: string;
+      question?: string;
+    };
+    if (!messageId?.trim() || !correctedAnswer?.trim() || !question?.trim()) {
+      return res.status(400).json({ error: "messageId, question, and correctedAnswer are required" });
+    }
+    const user = req.user as { email?: string } | undefined;
+    const qa = await prisma.curatedQA.create({
+      data: {
+        question: question.trim(),
+        answer: correctedAnswer.trim(),
+        source: `corrected_message:${messageId}`,
+        addedBy: user?.email || null,
+      },
+    });
+    await embedCuratedQA(qa.id, qa.question, qa.answer);
+    res.json(qa);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to save correction" });
+  }
+});
+
+// GET /review/stats — summary for review page header
+adminRouter.get("/review/stats", async (_req, res) => {
+  try {
+    const [thumbsDown, thumbsUp, openDiscrepancies, totalQA] = await Promise.all([
+      prisma.messageFeedback.count({ where: { rating: "down" } }),
+      prisma.messageFeedback.count({ where: { rating: "up" } }),
+      prisma.discrepancy.count({ where: { status: "open" } }),
+      prisma.curatedQA.count({ where: { active: true } }),
+    ]);
+    res.json({ thumbsDown, thumbsUp, openDiscrepancies, totalQA });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load review stats" });
+  }
+});
+
+/** Embed a curated Q&A pair into the knowledge base so RAG can find it. */
+async function embedCuratedQA(qaId: string, question: string, answer: string): Promise<void> {
+  try {
+    const { generateEmbedding } = await import("../services/embeddings.js");
+    // Find or create the "curated-qa" knowledge source
+    let source = await prisma.knowledgeSource.findFirst({ where: { type: "MANUAL", name: "Curated Q&A" } });
+    if (!source) {
+      source = await prisma.knowledgeSource.create({
+        data: { name: "Curated Q&A", type: "MANUAL", status: "SYNCED" },
+      });
+    }
+    const content = `Q: ${question}\nA: ${answer}`;
+    const embedding = await generateEmbedding(content);
+    const vecStr = "[" + embedding.join(",") + "]";
+    const chunkId = `qa-${qaId}`;
+    // Upsert: delete old chunk for this QA if exists, then insert
+    await prisma.$executeRawUnsafe(`DELETE FROM "KnowledgeChunk" WHERE id = $1`, chunkId);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "KnowledgeChunk" (id, "sourceId", content, url, title, "createdAt", embedding)
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6::vector)`,
+      chunkId,
+      source.id,
+      content,
+      null,
+      `Curated: ${question.slice(0, 80)}`,
+      vecStr
+    );
+    // Update source chunk count
+    const count = await prisma.knowledgeChunk.count({ where: { sourceId: source.id } });
+    await prisma.knowledgeSource.update({
+      where: { id: source.id },
+      data: { chunkCount: count, lastSyncedAt: new Date() },
+    });
+  } catch (e) {
+    console.warn("[embedCuratedQA] Failed:", (e as Error).message);
+  }
+}
 
 // --- Settings (Chunk 10): ADMIN only ---
 

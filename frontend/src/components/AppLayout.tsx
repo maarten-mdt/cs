@@ -6,6 +6,7 @@ import {
   BarChart3,
   Plug,
   Settings,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAuthStore } from "../stores/useAuthStore";
 
@@ -14,6 +15,7 @@ const navItems = [
   { to: "/customers", icon: Users, label: "Customers" },
   { to: "/knowledge", icon: BookOpen, label: "Knowledge" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
+  { to: "/review", icon: ClipboardCheck, label: "Review" },
   { to: "/connections", icon: Plug, label: "Connections" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];

@@ -70,6 +70,29 @@
     return bubble;
   }
 
+  function addFeedbackButtons(bubble, messageId) {
+    if (!messageId || !bubble || !bubble.parentElement) return;
+    var container = bubble.parentElement;
+    var fb = document.createElement("div");
+    fb.style.cssText = "display:flex;gap:4px;margin-top:4px;";
+    fb.innerHTML = '<button style="background:none;border:1px solid #e2e2e2;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:12px;color:#888;" data-r="up">\u{1F44D}</button><button style="background:none;border:1px solid #e2e2e2;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:12px;color:#888;" data-r="down">\u{1F44E}</button>';
+    container.appendChild(fb);
+    fb.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var rating = btn.getAttribute("data-r");
+        fb.querySelectorAll("button").forEach(function (b) { b.disabled = true; b.style.opacity = "0.4"; });
+        btn.style.opacity = "1";
+        btn.style.borderColor = rating === "up" ? "#4caf50" : "#e53935";
+        btn.style.color = rating === "up" ? "#4caf50" : "#e53935";
+        fetch("/api/chat/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId: messageId, rating: rating }),
+        }).catch(function () {});
+      });
+    });
+  }
+
   function showChipsOnlyWhenEmpty() {
     var messagesEl = document.getElementById("messages");
     var chipsEl = document.getElementById("chips");
@@ -149,6 +172,7 @@
               } else if (data.type === "done") {
                 aiBubble.classList.remove("typing");
                 if (data.conversationId && onConversationId) onConversationId(data.conversationId);
+                if (data.messageId) addFeedbackButtons(aiBubble, data.messageId);
               } else if (data.type === "error") {
                 aiBubble.textContent = data.message || "Something went wrong.";
                 aiBubble.classList.remove("typing");

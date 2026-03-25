@@ -28,9 +28,10 @@ model Customer {
   id             String    @id @default(cuid())
   email          String    @unique
   name           String?
-  shopifyId      String?   @unique
+  shopifyId      String?
   hubspotId      String?
   zendeskId      String?
+  storeRegion    String    @default("CA")
   totalSpend     Float     @default(0)
   orderCount     Int       @default(0)
   firstSeenAt    DateTime  @default(now())
@@ -50,6 +51,7 @@ model Conversation {
   customer          Customer?           @relation(fields: [customerId], references: [id])
   messages         Message[]
   status           ConversationStatus  @default(BOT)
+  storeRegion      String              @default("CA")
   topic            String?
   sentiment        String?
   escalatedAt      DateTime?
@@ -67,12 +69,48 @@ enum ConversationStatus {
 }
 
 model Message {
-  id             String      @id @default(cuid())
+  id             String           @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
   role           MessageRole
-  content        String      @db.Text
-  createdAt      DateTime    @default(now())
+  content        String           @db.Text
+  feedback       MessageFeedback?
+  createdAt      DateTime         @default(now())
+}
+
+model MessageFeedback {
+  id        String   @id @default(cuid())
+  messageId String   @unique
+  message   Message  @relation(fields: [messageId], references: [id])
+  rating    String   // "up" or "down"
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+}
+
+model CuratedQA {
+  id        String   @id @default(cuid())
+  question  String   @db.Text
+  answer    String   @db.Text
+  source    String?  // e.g. "admin_review", "reddit_r/longrange"
+  addedBy   String?  // admin user email
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Discrepancy {
+  id              String   @id @default(cuid())
+  communitySource String
+  communityText   String   @db.Text
+  websiteText     String?  @db.Text
+  websiteUrl      String?
+  topic           String
+  aiSuggestion    String?  @db.Text
+  status          String   @default("open")
+  resolvedBy      String?
+  resolution      String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 enum MessageRole {
@@ -101,6 +139,7 @@ enum SourceType {
   GOOGLE_DRIVE
   GOOGLE_SHEETS
   SHOPIFY
+  REDDIT
   MANUAL
 }
 

@@ -11,6 +11,7 @@ import { KnowledgePage } from "./pages/KnowledgePage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ReviewPage } from "./pages/ReviewPage";
 
 export default function App() {
   const init = useAuthStore((s) => s.init);
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="review" element={<ReviewPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
         <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
       </Route>

@@ -10,6 +10,8 @@ import {
 } from "../services/customers.js";
 import { enqueueSyncConversationEnd } from "../lib/queue.js";
 import { getConfig, getConfigFromDb } from "../lib/config.js";
+import { hasShopifyCredentials, type StoreRegion } from "../lib/shopifyConfig.js";
+import { fetchProduct } from "../services/shopify.js";
 
 export const chatRouter = Router();
 
@@ -40,15 +42,15 @@ const searchKnowledgeTool = {
   },
 };
 
-async function executeGetOrderInfo(input: { order_number?: string; email?: string }): Promise<unknown> {
+async function executeGetOrderInfo(input: { order_number?: string; email?: string }, storeRegion: StoreRegion): Promise<unknown> {
   try {
     if (input.order_number != null && String(input.order_number).trim()) {
-      const order = await getOrderByNumber(String(input.order_number).trim());
+      const order = await getOrderByNumber(String(input.order_number).trim(), storeRegion);
       if (!order) return { found: false, message: "No order found with that number." };
       return { found: true, order };
     }
     if (input.email != null && String(input.email).trim()) {
-      const orders = await getOrdersByEmail(String(input.email).trim());
+      const orders = await getOrdersByEmail(String(input.email).trim(), storeRegion);
       return { found: orders.length > 0, orders };
     }
     return { found: false, message: "Provide either order_number or email." };
@@ -98,7 +100,8 @@ function extractNameFromMessage(text: string): string | null {
 
 async function tryIdentifyAndLinkConversation(
   conversationId: string,
-  messageText: string
+  messageText: string,
+  storeRegion: StoreRegion = "CA"
 ): Promise<void> {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -116,7 +119,7 @@ async function tryIdentifyAndLinkConversation(
     const orderNumMatch = messageText.match(ORDER_NUMBER_REGEX);
     if (orderNumMatch) {
       try {
-        const order = await getOrderByNumber(orderNumMatch[0]);
+        const order = await getOrderByNumber(orderNumMatch[0], storeRegion);
         if (order?.email) email = order.email.trim().toLowerCase();
       } catch {
         // ignore
@@ -126,7 +129,7 @@ async function tryIdentifyAndLinkConversation(
   if (!email) return;
   const name = extractNameFromMessage(messageText);
   try {
-    const customer = await identifyCustomer(email, name ? { name } : undefined);
+    const customer = await identifyCustomer(email, { name: name ?? undefined, storeRegion });
     await linkConversationToCustomer(conversationId, customer.id);
   } catch (e) {
     console.warn("[chat] identifyCustomer failed:", (e as Error).message);
@@ -135,7 +138,11 @@ async function tryIdentifyAndLinkConversation(
 
 // POST /api/chat/message — public, stream AI response via SSE, with optional order lookup tool
 chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
-  const { sessionId, message, pageUrl } = req.body ?? {};
+  const { sessionId, message, pageUrl, storeRegion: rawRegion, pageContext: rawPageContext } = req.body ?? {};
+  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "CA") as StoreRegion;
+  const pageContext = rawPageContext && typeof rawPageContext === "object" ? rawPageContext as {
+    pageType?: string; productHandle?: string; variantId?: string; url?: string;
+  } : null;
 
   if (!sessionId || typeof sessionId !== "string" || !sessionId.trim()) {
     return res.status(400).json({ error: "sessionId is required" });
@@ -154,9 +161,10 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       where: { sessionId: sessionId.trim() },
       create: {
         sessionId: sessionId.trim(),
+        storeRegion,
         pageUrl: pageUrl ?? null,
       },
-      update: pageUrl ? { pageUrl } : {},
+      update: { ...(pageUrl ? { pageUrl } : {}), storeRegion },
     });
 
     const recentMessages = await prisma.message.findMany({
@@ -174,7 +182,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       },
     });
 
-    await tryIdentifyAndLinkConversation(conversation.id, (message as string).trim());
+    await tryIdentifyAndLinkConversation(conversation.id, (message as string).trim(), storeRegion);
 
     const initialMessages: MessageParam[] = [
       ...recentMessages
@@ -194,7 +202,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     const anthropic = new Anthropic({ apiKey });
     let fullText = "";
-    const hasOrderTool = !!(process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ACCESS_TOKEN);
+    const hasOrderTool = hasShopifyCredentials(storeRegion);
     const hasKnowledgeTool = !!process.env.OPENAI_API_KEY?.trim();
     const tools: Array<typeof getOrderInfoTool | typeof searchKnowledgeTool> = [];
     if (hasOrderTool) tools.push(getOrderInfoTool);
@@ -203,11 +211,27 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
 
     let messages: MessageParam[] = initialMessages;
 
+    // Build system prompt with optional product context
+    let systemPrompt = getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT;
+    if (pageContext?.productHandle && hasShopifyCredentials(storeRegion)) {
+      try {
+        const product = await fetchProduct(pageContext.productHandle, storeRegion);
+        if (product) {
+          const variantList = product.variants
+            .map((v) => `  - ${v.title}: $${v.price}${v.available ? "" : " (out of stock)"}`)
+            .join("\n");
+          systemPrompt += `\n\n--- CURRENT PRODUCT (customer is viewing this page) ---\nTitle: ${product.title}\nURL: ${product.url}\nDescription: ${product.description.slice(0, 1000)}\nVariants:\n${variantList}\n--- END PRODUCT ---`;
+        }
+      } catch (e) {
+        console.warn("[chat] fetchProduct failed:", (e as Error).message);
+      }
+    }
+
     while (true) {
       const stream = anthropic.messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: getConfig("SYSTEM_PROMPT") || DEFAULT_SYSTEM_PROMPT,
+        system: systemPrompt,
         messages,
         tools: toolsConfig,
       });
@@ -233,7 +257,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
         const input = (tu.input ?? {}) as Record<string, unknown>;
         const name = tu.name ?? "";
         let result: unknown;
-        if (name === "get_order_info") result = await executeGetOrderInfo(input as { order_number?: string; email?: string });
+        if (name === "get_order_info") result = await executeGetOrderInfo(input as { order_number?: string; email?: string }, storeRegion);
         else if (name === "search_knowledge") result = await executeSearchKnowledge(input as { query?: string });
         else result = { error: "Unknown tool" };
         toolResults.push({ type: "tool_result", tool_use_id: id, content: JSON.stringify(result) });
@@ -246,18 +270,20 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       ];
     }
 
-    res.write(`data: ${JSON.stringify({ type: "done", conversationId: conversation.id })}\n\n`);
-    res.flushHeaders?.();
-
+    let assistantMessageId: string | null = null;
     if (fullText) {
-      await prisma.message.create({
+      const saved = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           role: MessageRole.ASSISTANT,
           content: fullText,
         },
       });
+      assistantMessageId = saved.id;
     }
+
+    res.write(`data: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: assistantMessageId })}\n\n`);
+    res.flushHeaders?.();
 
     res.end();
   } catch (err) {
@@ -399,7 +425,8 @@ chatRouter.post("/api/chat/escalate", async (req: Request, res: Response) => {
 
 // POST /api/chat/identify — link conversation to customer by email (and optional name)
 chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
-  const { conversationId, email, name } = req.body ?? {};
+  const { conversationId, email, name, storeRegion: rawRegion } = req.body ?? {};
+  const storeRegion: StoreRegion = (["CA", "US", "INT"].includes(rawRegion) ? rawRegion : "CA") as StoreRegion;
   if (!conversationId || typeof conversationId !== "string" || !conversationId.trim()) {
     return res.status(400).json({ error: "conversationId is required" });
   }
@@ -415,6 +442,7 @@ chatRouter.post("/api/chat/identify", async (req: Request, res: Response) => {
     }
     const customer = await identifyCustomer(email.trim(), {
       name: typeof name === "string" && name.trim() ? name.trim() : undefined,
+      storeRegion,
     });
     await linkConversationToCustomer(conversation.id, customer.id);
     return res.json({ success: true, customerId: customer.id });
@@ -442,6 +470,63 @@ chatRouter.post("/api/chat/resolve", async (req: Request, res: Response) => {
   });
   await enqueueSyncConversationEnd(conversation.id);
   return res.json({ success: true });
+});
+
+// POST /api/chat/feedback — thumbs up/down on a bot message
+chatRouter.post("/api/chat/feedback", async (req: Request, res: Response) => {
+  const { messageId, rating, comment } = req.body ?? {};
+  if (!messageId || typeof messageId !== "string" || !messageId.trim()) {
+    return res.status(400).json({ error: "messageId is required" });
+  }
+  if (!rating || !["up", "down"].includes(rating)) {
+    return res.status(400).json({ error: "rating must be 'up' or 'down'" });
+  }
+  try {
+    const message = await prisma.message.findUnique({ where: { id: messageId.trim() } });
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+    await prisma.messageFeedback.upsert({
+      where: { messageId: messageId.trim() },
+      create: {
+        messageId: messageId.trim(),
+        rating,
+        comment: typeof comment === "string" && comment.trim() ? comment.trim() : null,
+      },
+      update: {
+        rating,
+        comment: typeof comment === "string" && comment.trim() ? comment.trim() : null,
+      },
+    });
+    return res.json({ success: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Feedback failed";
+    return res.status(500).json({ error: msg });
+  }
+});
+
+// GET /api/widget/config — public, returns greeting + suggested questions for embeddable widget
+chatRouter.get("/api/widget/config", async (_req: Request, res: Response) => {
+  try {
+    const greeting = getConfig("WIDGET_GREETING") || "Hi! I'm MDT's support assistant. How can I help you today?";
+    const defaultQs = ["Where is my order?", "Product compatibility", "Installation help"];
+    let suggestedQuestions = defaultQs;
+    const raw = await getConfigFromDb("SUGGESTED_QUESTIONS");
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+          suggestedQuestions = parsed.slice(0, 6);
+        }
+      } catch {}
+    }
+    res.json({ greeting, suggestedQuestions });
+  } catch {
+    res.json({
+      greeting: "Hi! How can I help you today?",
+      suggestedQuestions: ["Where is my order?", "Product compatibility", "Installation help"],
+    });
+  }
 });
 
 // GET /api/suggested-questions — public, for chips on home page

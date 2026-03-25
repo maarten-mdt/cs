@@ -1,7 +1,10 @@
 /**
  * Live order lookup via Shopify API. Optional Acumatica for inventory.
  * Never cached — always calls Shopify in real time.
+ * Supports multi-store via storeRegion (CA | US | INT).
  */
+
+import { getShopifyCredentials, SHOPIFY_VERSION, type StoreRegion } from "../lib/shopifyConfig.js";
 
 export interface OrderItem {
   name: string;
@@ -26,29 +29,11 @@ export interface Order {
   expectedShipDate?: string;
 }
 
-const SHOPIFY_VERSION = "2024-01";
-
-function getShopifyHeaders(): HeadersInit {
-  const token = process.env.SHOPIFY_ACCESS_TOKEN;
-  if (!token) throw new Error("SHOPIFY_ACCESS_TOKEN is not set");
-  return {
-    "X-Shopify-Access-Token": token,
-    "Content-Type": "application/json",
-  };
-}
-
-function getStoreUrl(): string {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  if (!domain) throw new Error("SHOPIFY_STORE_DOMAIN is not set");
-  const base = domain.startsWith("http") ? domain : `https://${domain}`;
-  return base.replace(/\/$/, "");
-}
-
-async function getVariantInventoryQuantity(variantId: number): Promise<number> {
-  const storeUrl = getStoreUrl();
+async function getVariantInventoryQuantity(variantId: number, storeRegion: StoreRegion): Promise<number> {
+  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/variants/${variantId}.json?fields=inventory_quantity`,
-    { headers: getShopifyHeaders() }
+    { headers }
   );
   if (!res.ok) return 0;
   const data = (await res.json()) as { variant?: { inventory_quantity?: number } };
@@ -103,25 +88,25 @@ function toOrderItem(
   };
 }
 
-export async function getOrderByNumber(orderNumber: string): Promise<Order | null> {
-  const storeUrl = getStoreUrl();
+export async function getOrderByNumber(orderNumber: string, storeRegion: StoreRegion = "CA"): Promise<Order | null> {
+  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
   const name = orderNumber.replace(/^#/, "").trim();
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?name=${encodeURIComponent(name)}&status=any&limit=1`,
-    { headers: getShopifyHeaders() }
+    { headers }
   );
   if (!res.ok) return null;
   const data = (await res.json()) as { orders?: unknown[] };
   const raw = data.orders?.[0] as RawShopifyOrder | undefined;
   if (!raw) return null;
-  return rawOrderToOrder(raw);
+  return rawOrderToOrder(raw, storeRegion);
 }
 
-export async function getOrdersByEmail(email: string): Promise<Order[]> {
-  const storeUrl = getStoreUrl();
+export async function getOrdersByEmail(email: string, storeRegion: StoreRegion = "CA"): Promise<Order[]> {
+  const { storeUrl, headers } = getShopifyCredentials(storeRegion);
   const res = await fetch(
     `${storeUrl}/admin/api/${SHOPIFY_VERSION}/orders.json?email=${encodeURIComponent(email)}&status=any&limit=5`,
-    { headers: getShopifyHeaders() }
+    { headers }
   );
   if (!res.ok) return [];
   const data = (await res.json()) as { orders?: RawShopifyOrder[] };
@@ -129,7 +114,7 @@ export async function getOrdersByEmail(email: string): Promise<Order[]> {
   const out: Order[] = [];
   for (const raw of list) {
     try {
-      out.push(await rawOrderToOrder(raw));
+      out.push(await rawOrderToOrder(raw, storeRegion));
     } catch {
       // skip bad order
     }
@@ -158,7 +143,7 @@ interface RawShopifyOrder {
   }[];
 }
 
-async function rawOrderToOrder(raw: RawShopifyOrder): Promise<Order> {
+async function rawOrderToOrder(raw: RawShopifyOrder, storeRegion: StoreRegion): Promise<Order> {
   const fulfillments = raw.fulfillments ?? [];
   const firstFulfillment = fulfillments[0];
   let trackingNumber: string | undefined;
@@ -182,9 +167,9 @@ async function rawOrderToOrder(raw: RawShopifyOrder): Promise<Order> {
     if (process.env.ACUMATICA_API_URL) {
       const acu = await getAcumaticaInventory(line.sku || "");
       if (acu !== null) qtyOnHand = acu;
-      else if (line.variant_id) qtyOnHand = await getVariantInventoryQuantity(line.variant_id);
+      else if (line.variant_id) qtyOnHand = await getVariantInventoryQuantity(line.variant_id, storeRegion);
     } else if (line.variant_id) {
-      qtyOnHand = await getVariantInventoryQuantity(line.variant_id);
+      qtyOnHand = await getVariantInventoryQuantity(line.variant_id, storeRegion);
     }
     items.push(toOrderItem(line, fulfilledForLine, qtyOnHand));
   }
