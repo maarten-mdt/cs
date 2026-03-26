@@ -134,4 +134,13 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 app.listen(PORT, () => {
   console.log(`MDT Support API running on port ${PORT}`);
+
+  // Start sync worker in-process (no separate Railway service needed)
+  if (process.env.REDIS_URL?.trim()) {
+    import("./workers/sync.worker.js")
+      .then(() => console.log("[worker] Sync worker started in-process"))
+      .catch((e) => console.warn("[worker] Failed to start sync worker:", (e as Error).message));
+  } else {
+    console.warn("[worker] REDIS_URL not set — sync worker disabled");
+  }
 });
