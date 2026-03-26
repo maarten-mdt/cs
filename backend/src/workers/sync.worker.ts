@@ -35,8 +35,9 @@ import { SyncStatus } from "@prisma/client";
 
 const url = process.env.REDIS_URL?.trim();
 if (!url) {
-  console.error("REDIS_URL is required for the sync worker. Exiting.");
-  process.exit(1);
+  console.warn("[worker] REDIS_URL not set — sync worker not started.");
+  // Don't process.exit when imported in-process; just stop here.
+  throw new Error("REDIS_URL is required for the sync worker");
 }
 
 /** Derive storeRegion from source name convention (e.g. "Shopify Products (US)") or job data. */
