@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthGuard } from "./components/AuthGuard";
 import { RequireAdmin } from "./components/RequireAdmin";
@@ -12,6 +12,14 @@ import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ConnectionsPage } from "./pages/ConnectionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ReviewPage } from "./pages/ReviewPage";
+
+// Lazy-loaded hub pages (route-level code splitting)
+const HubPage = lazy(() => import("./pages/hub/HubPage"));
+const CannedResponsesPage = lazy(() => import("./pages/hub/CannedResponsesPage"));
+
+function LazyFallback() {
+  return <div className="flex items-center justify-center h-full text-gray-400 animate-pulse">Loading...</div>;
+}
 
 export default function App() {
   const init = useAuthStore((s) => s.init);
@@ -31,7 +39,23 @@ export default function App() {
           </AuthGuard>
         }
       >
-        <Route index element={<Navigate to="/conversations" replace />} />
+        <Route index element={<Navigate to="/hub" replace />} />
+        <Route
+          path="hub"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <HubPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="hub/canned-responses"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <CannedResponsesPage />
+            </Suspense>
+          }
+        />
         <Route path="conversations" element={<ConversationsPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />

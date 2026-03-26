@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from "react-router-dom";
 import {
+  Headphones,
   MessageSquare,
   Users,
   BookOpen,
@@ -7,10 +8,13 @@ import {
   Plug,
   Settings,
   ClipboardCheck,
+  Zap,
 } from "lucide-react";
 import { useAuthStore } from "../stores/useAuthStore";
 
 const navItems = [
+  { to: "/hub", icon: Headphones, label: "Agent Hub" },
+  { to: "/hub/canned-responses", icon: Zap, label: "Canned Responses" },
   { to: "/conversations", icon: MessageSquare, label: "Conversations" },
   { to: "/customers", icon: Users, label: "Customers" },
   { to: "/knowledge", icon: BookOpen, label: "Knowledge" },
