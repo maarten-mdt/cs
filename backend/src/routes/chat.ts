@@ -64,7 +64,7 @@ async function executeSearchKnowledge(input: { query?: string }): Promise<unknow
   try {
     const q = input.query != null ? String(input.query).trim() : "";
     if (!q) return { chunks: [], message: "Query is required." };
-    const chunks = await searchKnowledge(q, 14);
+    const chunks = await searchKnowledge(q, 6);
     return {
       chunks: chunks.map((c) => ({ title: c.title, url: c.url, content: c.content })),
     };
@@ -170,7 +170,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
     const recentMessages = await prisma.message.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 10,
     });
     recentMessages.reverse();
 
@@ -227,23 +227,42 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
       }
     }
 
+    // Helper: call Anthropic with retry on 429
+    async function callWithRetry(msgs: MessageParam[], sys: string, tls: typeof toolsConfig, maxRetries = 2) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const stream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1024,
+            system: sys,
+            messages: msgs,
+            tools: tls,
+          });
+
+          stream.on("text", (delta: string) => {
+            fullText += delta;
+            res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+            res.flushHeaders?.();
+          });
+
+          await stream.done();
+          return await stream.finalMessage();
+        } catch (e: unknown) {
+          const isRateLimit = e instanceof Error && (e.message.includes("429") || e.message.includes("rate_limit"));
+          if (isRateLimit && attempt < maxRetries) {
+            const waitMs = (attempt + 1) * 2000; // 2s, 4s
+            console.warn(`[chat] Rate limited, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw new Error("Max retries exceeded");
+    }
+
     while (true) {
-      const stream = anthropic.messages.stream({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages,
-        tools: toolsConfig,
-      });
-
-      stream.on("text", (delta: string) => {
-        fullText += delta;
-        res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
-        res.flushHeaders?.();
-      });
-
-      await stream.done();
-      const finalMsg = await stream.finalMessage();
+      const finalMsg = await callWithRetry(messages, systemPrompt, toolsConfig);
       const content = (finalMsg as { content?: { type: string; id?: string; name?: string; input?: unknown }[] }).content ?? [];
       const toolUses = content.filter((b) => b.type === "tool_use");
 
@@ -288,11 +307,15 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
     res.end();
   } catch (err) {
     console.error("[chat/message]", err);
-    const errorMessage = err instanceof Error ? err.message : "An error occurred";
+    const raw = err instanceof Error ? err.message : "An error occurred";
+    const isRateLimit = raw.includes("429") || raw.includes("rate_limit");
+    const userMessage = isRateLimit
+      ? "I'm getting a lot of questions right now. Please wait a moment and try again."
+      : "Sorry, something went wrong. Please try again.";
     if (!res.headersSent) {
-      res.status(500).json({ error: errorMessage });
+      res.status(isRateLimit ? 429 : 500).json({ error: userMessage });
     } else {
-      res.write(`data: ${JSON.stringify({ type: "error", message: errorMessage })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "error", message: userMessage })}\n\n`);
       res.end();
     }
   }
