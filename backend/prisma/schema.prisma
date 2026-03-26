@@ -7,14 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Users / Agents ────────────────────────────────────────────────
+
 model User {
-  id          String    @id @default(cuid())
-  email       String    @unique
-  name        String?
-  avatarUrl   String?
-  role        Role      @default(SUPPORT)
-  createdAt   DateTime  @default(now())
-  lastLoginAt DateTime?
+  id                 String         @id @default(cuid())
+  email              String         @unique
+  name               String?
+  avatarUrl          String?
+  role               Role           @default(SUPPORT)
+  createdAt          DateTime       @default(now())
+  lastLoginAt        DateTime?
+
+  // Agent hub relations
+  assignedConversations Conversation[] @relation("AssignedAgent")
+  phoneCalls            PhoneCall[]
 }
 
 enum Role {
@@ -24,49 +30,100 @@ enum Role {
   CONTENT_EDITOR
 }
 
+// ─── Customers ─────────────────────────────────────────────────────
+
 model Customer {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  name           String?
-  shopifyId      String?
-  hubspotId      String?
-  zendeskId      String?
-  storeRegion    String    @default("US")
-  totalSpend     Float     @default(0)
-  orderCount     Int       @default(0)
-  firstSeenAt    DateTime  @default(now())
-  lastSeenAt     DateTime  @default(now())
-  conversations  Conversation[]
-  mergedIntoId   String?
-  mergedInto     Customer?  @relation("CustomerMerge", fields: [mergedIntoId], references: [id])
-  mergedFrom     Customer[] @relation("CustomerMerge")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String?
+  phone            String?
+  shopifyId        String?
+  hubspotId        String?
+  zendeskId        String?
+  klaviyoProfileId String?
+  storeRegion      String    @default("US")
+  totalSpend       Float     @default(0)
+  orderCount       Int       @default(0)
+  firstSeenAt      DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  conversations    Conversation[]
+  phoneCalls       PhoneCall[]
+  mergedIntoId     String?
+  mergedInto       Customer?  @relation("CustomerMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom       Customer[] @relation("CustomerMerge")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([shopifyId])
+  @@index([klaviyoProfileId])
 }
+
+// ─── Conversations (tickets) ───────────────────────────────────────
 
 model Conversation {
   id               String              @id @default(cuid())
   sessionId        String              @unique
-  customerId        String?
-  customer          Customer?           @relation(fields: [customerId], references: [id])
+  customerId       String?
+  customer         Customer?           @relation(fields: [customerId], references: [id])
   messages         Message[]
+  phoneCalls       PhoneCall[]
+  tags             ConversationTag[]
+
+  // Status & assignment
   status           ConversationStatus  @default(BOT)
+  priority         Priority            @default(NORMAL)
+  assignedToId     String?
+  assignedTo       User?               @relation("AssignedAgent", fields: [assignedToId], references: [id])
+
+  // Channel & threading
+  channel          Channel             @default(CHAT)
+  emailThreadId    String?
+  subject          String?
+
+  // Metadata
   storeRegion      String              @default("US")
   topic            String?
   sentiment        String?
+  lastMessageAt    DateTime?
   escalatedAt      DateTime?
   resolvedAt       DateTime?
+  snoozedUntil     DateTime?
   pageUrl          String?
   zendeskTicketId  String?
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+
+  @@index([status, lastMessageAt(sort: Desc)])
+  @@index([assignedToId, status])
+  @@index([customerId])
+  @@index([emailThreadId])
+  @@index([channel, status, createdAt(sort: Desc)])
 }
 
 enum ConversationStatus {
   BOT
+  OPEN
+  PENDING
+  SNOOZED
   ESCALATED
   RESOLVED
 }
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum Channel {
+  CHAT
+  EMAIL
+  PHONE
+  API
+}
+
+// ─── Messages ──────────────────────────────────────────────────────
 
 model Message {
   id             String           @id @default(cuid())
@@ -74,6 +131,9 @@ model Message {
   conversation   Conversation     @relation(fields: [conversationId], references: [id])
   role           MessageRole
   content        String           @db.Text
+  channel        Channel?
+  senderAgentId  String?
+  isInternal     Boolean          @default(false)
   feedback       MessageFeedback?
   createdAt      DateTime         @default(now())
 }
@@ -87,12 +147,116 @@ model MessageFeedback {
   createdAt DateTime @default(now())
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  AGENT
+}
+
+// ─── Tags ──────────────────────────────────────────────────────────
+
+model Tag {
+  id            String            @id @default(cuid())
+  name          String            @unique
+  color         String            @default("#6B7280")
+  conversations ConversationTag[]
+  createdAt     DateTime          @default(now())
+}
+
+model ConversationTag {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tagId          String
+  tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, tagId])
+}
+
+// ─── Canned Responses ──────────────────────────────────────────────
+
+model CannedResponse {
+  id        String   @id @default(cuid())
+  shortcut  String   @unique
+  title     String
+  content   String   @db.Text
+  category  String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Phone Calls (Chunk 3E) ────────────────────────────────────────
+
+model PhoneCall {
+  id               String        @id @default(cuid())
+  conversationId   String?
+  conversation     Conversation? @relation(fields: [conversationId], references: [id])
+  customerId       String?
+  customer         Customer?     @relation(fields: [customerId], references: [id])
+  agentId          String
+  agent            User          @relation(fields: [agentId], references: [id])
+
+  // Core call data
+  direction        CallDirection
+  status           CallStatus
+  phoneFrom        String
+  phoneTo          String
+  startedAt        DateTime
+  answeredAt       DateTime?
+  endedAt          DateTime?
+  durationSeconds  Int?
+
+  // Notes
+  summary          String        @db.Text
+  outcome          String?
+  followUpRequired Boolean       @default(false)
+  followUpNote     String?
+
+  // Future live phone system fields
+  externalCallId   String?       @unique
+  recordingUrl     String?
+  transcriptText   String?       @db.Text
+  aiSummary        String?
+  source           CallSource    @default(MANUAL)
+  rawWebhookData   Json?
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([customerId, startedAt(sort: Desc)])
+  @@index([agentId, startedAt(sort: Desc)])
+  @@index([externalCallId])
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  COMPLETED
+  MISSED
+  VOICEMAIL
+  NO_ANSWER
+}
+
+enum CallSource {
+  MANUAL
+  RINGCENTRAL
+  AIRCALL
+}
+
+// ─── Knowledge Base ────────────────────────────────────────────────
+
 model CuratedQA {
   id        String   @id @default(cuid())
   question  String   @db.Text
   answer    String   @db.Text
-  source    String?  // e.g. "admin_review", "reddit_r/longrange"
-  addedBy   String?  // admin user email
+  source    String?
+  addedBy   String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,12 +275,6 @@ model Discrepancy {
   resolution      String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-}
-
-enum MessageRole {
-  USER
-  ASSISTANT
-  SYSTEM
 }
 
 model KnowledgeSource {
@@ -160,6 +318,8 @@ model KnowledgeChunk {
   title     String?
   createdAt DateTime        @default(now())
 }
+
+// ─── App Config ────────────────────────────────────────────────────
 
 model AppConfig {
   id        String   @id @default(cuid())
