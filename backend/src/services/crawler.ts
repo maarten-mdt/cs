@@ -7,7 +7,6 @@ import * as cheerio from "cheerio";
 import pLimit from "p-limit";
 import { prisma } from "../lib/prisma.js";
 import { SyncStatus } from "@prisma/client";
-import { generateBatch } from "./embeddings.js";
 
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; MDTBot/1.0; +https://mdttac.com)";
 const FETCH_TIMEOUT_MS = 15000;
@@ -178,44 +177,8 @@ export async function crawlWebsite(sourceId: string): Promise<void> {
     return;
   }
 
-  if (!process.env.OPENAI_API_KEY?.trim()) {
-    await prisma.knowledgeSource.update({
-      where: { id: sourceId },
-      data: {
-        status: SyncStatus.FAILED,
-        errorMessage: "OPENAI_API_KEY is required for embeddings. Set it in .env.",
-      },
-    });
-    return;
-  }
-
-  await prisma.knowledgeChunk.deleteMany({ where: { sourceId } });
-
-  const texts = insertQueue.map((c) => c.content);
-  const allEmbeddings: number[][] = [];
-  for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
-    const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
-    const embeddings = await generateBatch(batch);
-    allEmbeddings.push(...embeddings);
-  }
-
-  const { randomUUID } = await import("crypto");
-  const vecStr = (emb: number[]) => "[" + emb.join(",") + "]";
-  for (let i = 0; i < insertQueue.length; i++) {
-    const item = insertQueue[i];
-    const embedding = allEmbeddings[i];
-    const id = randomUUID();
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "KnowledgeChunk" (id, "sourceId", content, url, title, "createdAt", embedding)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6::vector)`,
-      id,
-      sourceId,
-      item.content,
-      item.url,
-      item.title,
-      embedding ? vecStr(embedding) : ""
-    );
-  }
+  const { insertKnowledgeChunks } = await import("./knowledgeChunks.js");
+  await insertKnowledgeChunks(sourceId, insertQueue);
 
   await prisma.knowledgeSource.update({
     where: { id: sourceId },
