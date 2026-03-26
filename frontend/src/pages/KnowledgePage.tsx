@@ -301,9 +301,9 @@ export function KnowledgePage() {
               )}
               {addType === "FIRECRAWL" && (
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Search queries (comma-separated)</label>
-                  <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="MDT chassis review, MDT ESS compatibility, MDT ACC install" />
-                  <p className="text-xs text-gray-500 mt-1">Each query searches the web and scrapes the results. Requires FIRECRAWL_API_KEY in Connections.</p>
+                  <label className="block text-sm text-gray-400 mb-1">URLs and/or search queries</label>
+                  <textarea value={addUrl} onChange={(e) => setAddUrl(e.target.value)} rows={5} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white text-sm" placeholder={"https://snipershide.com/shooting/threads/mdt-chassis.123/\nhttps://www.reddit.com/r/longrange/comments/abc123/\nMDT chassis review\nMDT ESS compatibility"} />
+                  <p className="text-xs text-gray-500 mt-1">One per line. URLs (https://...) are scraped directly. Everything else is treated as a web search query. Requires FIRECRAWL_API_KEY in Connections.</p>
                 </div>
               )}
               {addType === "REDDIT" && (
