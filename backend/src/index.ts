@@ -14,6 +14,7 @@ import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { chatRouter } from "./routes/chat.js";
 import { zendeskRouter } from "./routes/zendesk.js";
+import { hubRouter } from "./routes/hub.js";
 import { rateLimitChat } from "./middleware/rateLimitChat.js";
 import passport from "passport";
 
@@ -106,6 +107,19 @@ app.use("/", authRouter);
 app.use("/", chatRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/zendesk", zendeskRouter);
+app.use("/api/hub", hubRouter);
+
+// Public phone webhook (no auth — verified by provider signature)
+app.post("/api/webhooks/phone/:provider", (req, res) => {
+  const { provider } = req.params;
+  if (!["ringcentral", "aircall"].includes(provider)) {
+    return res.status(400).json({ error: "Unsupported provider" });
+  }
+  // TODO: Parse provider payload and upsert PhoneCall record
+  console.log(`[webhook/phone/${provider}] Received:`, JSON.stringify(req.body).slice(0, 500));
+  res.json({ received: true });
+});
+
 app.use("/", routes);
 
 // Public home page, chat script, and widget
