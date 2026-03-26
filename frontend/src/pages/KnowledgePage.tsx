@@ -4,10 +4,12 @@ import { Plus, RefreshCw, Trash2, X, BookOpen } from "lucide-react";
 
 const SOURCE_TYPES = [
   { value: "WEBSITE", label: "Website" },
+  { value: "FIRECRAWL", label: "Firecrawl (Web Search + Scrape)" },
   { value: "ZENDESK", label: "Zendesk Help Center" },
   { value: "GOOGLE_DRIVE", label: "Google Drive" },
   { value: "GOOGLE_SHEETS", label: "Google Sheets" },
   { value: "SHOPIFY", label: "Shopify Products" },
+  { value: "REDDIT", label: "Reddit" },
 ];
 
 function StatusDot({ status }: { status: string }) {
@@ -88,7 +90,7 @@ export function KnowledgePage() {
       };
       if (addType === "WEBSITE" && addUrl.trim()) body.url = addUrl.trim();
       if (addType === "WEBSITE") body.maxPages = Math.min(50000, Math.max(1, addMaxPages));
-      if ((addType === "GOOGLE_DRIVE" || addType === "GOOGLE_SHEETS") && addUrl.trim()) body.url = addUrl.trim();
+      if ((addType === "GOOGLE_DRIVE" || addType === "GOOGLE_SHEETS" || addType === "FIRECRAWL" || addType === "REDDIT") && addUrl.trim()) body.url = addUrl.trim();
       await api.createSource(body);
       setAddOpen(false);
       setAddName("");
@@ -295,6 +297,20 @@ export function KnowledgePage() {
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Spreadsheet URL or ID</label>
                   <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="https://docs.google.com/spreadsheets/d/... or spreadsheet ID" />
+                </div>
+              )}
+              {addType === "FIRECRAWL" && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Search queries (comma-separated)</label>
+                  <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="MDT chassis review, MDT ESS compatibility, MDT ACC install" />
+                  <p className="text-xs text-gray-500 mt-1">Each query searches the web and scrapes the results. Requires FIRECRAWL_API_KEY in Connections.</p>
+                </div>
+              )}
+              {addType === "REDDIT" && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Subreddits (comma-separated)</label>
+                  <input type="text" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} className="w-full rounded border border-border-dark bg-surface px-3 py-2 text-white" placeholder="longrange, PRS, guns, hunting" />
+                  <p className="text-xs text-gray-500 mt-1">Searches these subreddits for MDT-related discussions.</p>
                 </div>
               )}
               {addType === "SHOPIFY" && <p className="text-sm text-gray-400">Uses credentials from the Connections page.</p>}
