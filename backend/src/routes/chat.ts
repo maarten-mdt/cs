@@ -203,7 +203,7 @@ chatRouter.post("/api/chat/message", async (req: Request, res: Response) => {
     const anthropic = new Anthropic({ apiKey });
     let fullText = "";
     const hasOrderTool = await hasShopifyCredentials(storeRegion);
-    const hasKnowledgeTool = !!process.env.OPENAI_API_KEY?.trim();
+    const hasKnowledgeTool = true; // Always available: vector search or Q&A/keyword fallback
     const tools: Array<typeof getOrderInfoTool | typeof searchKnowledgeTool> = [];
     if (hasOrderTool) tools.push(getOrderInfoTool);
     if (hasKnowledgeTool) tools.push(searchKnowledgeTool);
